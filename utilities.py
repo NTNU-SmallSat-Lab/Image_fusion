@@ -50,12 +50,9 @@ def Get_path():
         name = file_path.stem
         return file_path, name
 
-def Get_subset(path, size, subset, name) -> np.array:
+def Get_subset(path, size, subset) -> np.array:
         flattened_array = np.loadtxt(fname=path)
         array = flattened_array.reshape(size)
-        RGB_representation = (normalize(array[:,:,[75, 46, 18]])*255).astype(np.uint8) #bands R:75, G:46, B:18
-        name = f"{name}\\full_image.png"
-        save_RGB(RGB_representation,name)
         subset_array = array[subset[0]:subset[1],subset[2]:subset[3],:]
         return subset_array
 
@@ -108,7 +105,6 @@ def Gen_downsampled_spatial(downsampling_factor, size) -> np.array:
              for k in range(downsampling_factor):
                   spat_x = (i*reduced_size[0]+j)
                   spat_y = (i*size[0]+j)*downsampling_factor+k*downsampling_factor*reduced_size[0]
-                  print(f"Writing to [{spat_x}, {spat_y}:{spat_y+downsampling_factor}]")
                   spatial_transform[spat_x,spat_y:spat_y+downsampling_factor] = np.ones(shape=(1,downsampling_factor))/(downsampling_factor**2)
             
     return spatial_transform.astype(np.float16)
