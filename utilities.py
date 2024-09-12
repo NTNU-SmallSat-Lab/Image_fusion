@@ -99,12 +99,19 @@ def Downsample(data: np.array, sigma=1, downsampling_factor=2) -> np.array:
     return lowres_downsampled
 
 def Gen_downsampled_spatial(downsampling_factor, size) -> np.array:
-    spatial_transform = np.zeros(shape=size)
-    for i in range(spatial_transform.shape[0]):
-        for j in range(spatial_transform.shape[1]):
-                if i == j and i%downsampling_factor == 0:
-                    spatial_transform[i:i+downsampling_factor,j:j+downsampling_factor] = np.ones(shape=(downsampling_factor,downsampling_factor))/(downsampling_factor**2)
-    return spatial_transform.reshape(size[0]*size[1],1)
+    reduced_size = (int(size[0]/downsampling_factor),int(size[1]/downsampling_factor))
+    high_res, low_res = size[0]*size[1], reduced_size[0]*reduced_size[1]
+    spatial_transform = np.zeros(shape=(low_res,high_res))
+    print(spatial_transform.shape)
+    for i in range(reduced_size[0]):
+        for j in range(reduced_size[1]):
+             for k in range(downsampling_factor):
+                  spat_x = (i*reduced_size[0]+j)
+                  spat_y = (i*size[0]+j)*downsampling_factor+k*downsampling_factor*reduced_size[0]
+                  print(f"Writing to [{spat_x}, {spat_y}:{spat_y+downsampling_factor}]")
+                  spatial_transform[spat_x,spat_y:spat_y+downsampling_factor] = np.ones(shape=(1,downsampling_factor))/(downsampling_factor**2)
+            
+    return spatial_transform.astype(np.float16)
 
 def Gen_spectral(rgb, bands, spectral_spread) -> np.array:
     spectral_response_matrix = np.zeros(shape=(3,bands))

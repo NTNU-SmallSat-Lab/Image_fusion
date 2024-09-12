@@ -18,14 +18,15 @@ rgb = {
     "G": 46,
     "B": 18
 }
-original_size = (598, 1092, 120)
+original_size = (200,200,120)
+#original_size = (598, 1092, 120)
 #original_size = (956, 684, 120) #TODO implement wide/nominal check and autoset size
 
-arr = util.Get_subset(data_string, original_size, [350,500,400,550], name)
+arr = util.Get_subset(data_string, original_size, [0,200,0,200], name)
 bands = arr.shape[2]
 arr = arr.astype(precision) #Unsure what sort of precision is required here
 arr = util.normalize(arr) #Needs to be checked
-size = (150,150)
+size = (200,200)
 downsample_factor = 2
 sigma = 1
 
