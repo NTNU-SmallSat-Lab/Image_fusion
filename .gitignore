@@ -1,0 +1,5 @@
+__pycache__/
+data/
+hypso_1_datacubes/
+output_images/
+.vscode/
