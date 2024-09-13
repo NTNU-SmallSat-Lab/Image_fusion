@@ -35,15 +35,17 @@ save_HSI_as_RGB(arr, name=f"{name}\\original.png", rgb=rgb) #Save original subse
 
 rgb_representation = arr[:,:,[rgb["R"],rgb["G"],rgb["B"]]] #Generate RGB representation of original MSI
 lowres_downsampled = util.Downsample(arr, sigma=sigma, downsampling_factor=downsample_factor) #Generate downsampled HSI
+upsized_image = np.repeat(np.repeat(lowres_downsampled, downsample_factor, axis=0), 2, axis=1)
 
-save_HSI_as_RGB(lowres_downsampled, name=f"{name}\\Downscaled.png", rgb=rgb) #Save HSI
+save_HSI_as_RGB(upsized_image, name=f"{name}\\Downscaled.png", rgb=rgb) #Save HSI
 
-endmember_count = 30
+endmember_count = 40
 
 spatial_transform_matrix = util.Gen_downsampled_spatial(downsample_factor,size).transpose() #Generate spatial transform for downsampling
 
 spectral_response_matrix = util.Gen_spectral(rgb=rgb, bands=bands, spectral_spread=5)
 
 Upscaled_datacube = CNMF(lowres_downsampled, rgb_representation, spatial_transform_matrix, spectral_response_matrix, endmember_count)
-
+error = util.get_error(Upscaled_datacube,arr)
+save_HSI_as_RGB(Upscaled_datacube, name=f"{name}\\Error.png", rgb=rgb)
 save_HSI_as_RGB(Upscaled_datacube, name=f"{name}\\Output.png", rgb=rgb)

@@ -2,7 +2,7 @@ import numpy as np
 from VCA_master.VCA import vca
 from utilities import Cost, normalize
 
-def CNMF(HSI_data: np.array, MSI_data: np.array, spatial_transform: np.array, spectral_response: np.array, endmembers=40, loops=(100,5), tol=0.1) -> np.array:
+def CNMF(HSI_data: np.array, MSI_data: np.array, spatial_transform: np.array, spectral_response: np.array, endmembers=40, loops=(200,5), tol=0.0001) -> np.array:
     """Upscales HSI image to MSI resolution using coupled non-negative matrix factorisation
         
     Args:
