@@ -10,7 +10,7 @@ def normalize(image):
         """
         Normalize an image array to the range [0, 255].
         """
-        img_min = np.max([np.min(image), 1])
+        img_min = np.max([np.min(image), 1e-15])
         img_max = np.max(image)
         # Avoid division by zero if all pixels are the same
         output = image/(img_max-img_min)
@@ -121,3 +121,7 @@ def test_spatial(pixels_m,pixels_h):
     for i in range(int(pixels_h/4)):
         spatial_transform_matrix[2*i:2*(i+1)-1,i] = 1 #combine pixels 2-to-1 NEEDS UPDATING FOR DIFFERENT DOWNSAMPLING VALUES
     return spatial_transform_matrix
+
+def get_error(data1, data2):
+     error = np.abs(np.diff(data1, data2,axis=2)/np.max(data1,data2,axis=2))
+     return error

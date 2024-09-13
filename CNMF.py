@@ -14,13 +14,11 @@ def CNMF(HSI_data: np.array, MSI_data: np.array, spatial_transform: np.array, sp
     """
     precision = np.float32
     h_bands, m_bands = HSI_data.shape[2], MSI_data.shape[2]
-    """HSI_data = np.clip(HSI_data,1E-15,np.max(HSI_data)) #Should this be necessary?
+    HSI_data = np.clip(HSI_data,1E-15,np.max(HSI_data)) #Should this be necessary?
     MSI_data = np.clip(MSI_data,1E-15,np.max(MSI_data)) #Should this be necessary?
     CheckMat(HSI_data, "HSI", zero=True)
-    CheckMat(MSI_data, "MSI", zero=True)"""
-    print(HSI_data[0,0,:5])
-    h_flat, m_flat = HSI_data.reshape(-1,h_bands).transpose(), MSI_data.reshape(-1,m_bands).transpose()
-    print(h_flat[:5,0])
+    CheckMat(MSI_data, "MSI", zero=True)
+    h_flat, m_flat = HSI_data.reshape(HSI_data.shape[0]*HSI_data.shape[1],h_bands).T, MSI_data.reshape(-1,m_bands).T
 
     w = np.zeros(shape=(h_bands,endmembers),dtype=precision)
     h = np.ones(shape=(endmembers,m_flat.shape[1]),dtype=precision)/endmembers
@@ -94,9 +92,9 @@ def CNMF(HSI_data: np.array, MSI_data: np.array, spatial_transform: np.array, sp
         count_o += 1
         if count_o == i_out:
             done_o = True
-    out_flat = normalize(np.matmul(w,h))
-    out = out_flat.reshape(MSI_data.shape[0],MSI_data.shape[1],h_bands)
-    return out
+    out_flat = np.matmul(w,h)
+    out = out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands)
+    return normalize(out)
 
 def CheckMat(data, name, zero = False):
     assert not np.any(np.isinf(data)), f"Matrix {name} has infinite values"
