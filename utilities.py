@@ -123,5 +123,5 @@ def test_spatial(pixels_m,pixels_h):
     return spatial_transform_matrix
 
 def get_error(data1, data2):
-     error = np.abs(data1-data2)
-     return error
+     error = np.abs((data1-data2)/(data2+1e-15))
+     return normalize(error)
