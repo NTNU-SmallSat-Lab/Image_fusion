@@ -99,7 +99,6 @@ def Gen_downsampled_spatial(downsampling_factor, size) -> np.array:
     reduced_size = (int(size[0]/downsampling_factor),int(size[1]/downsampling_factor))
     high_res, low_res = size[0]*size[1], reduced_size[0]*reduced_size[1]
     spatial_transform = np.zeros(shape=(low_res,high_res))
-    print(spatial_transform.shape)
     for i in range(reduced_size[0]):
         for j in range(reduced_size[1]):
              for k in range(downsampling_factor):
@@ -107,7 +106,7 @@ def Gen_downsampled_spatial(downsampling_factor, size) -> np.array:
                   spat_y = (i*size[0]+j)*downsampling_factor+k*downsampling_factor*reduced_size[0]
                   spatial_transform[spat_x,spat_y:spat_y+downsampling_factor] = np.ones(shape=(1,downsampling_factor))/(downsampling_factor**2)
             
-    return spatial_transform.astype(np.float16)
+    return spatial_transform.astype(np.float64)
 
 def Gen_spectral(rgb, bands, spectral_spread) -> np.array:
     spectral_response_matrix = np.zeros(shape=(3,bands))
@@ -116,3 +115,9 @@ def Gen_spectral(rgb, bands, spectral_spread) -> np.array:
     spectral_response_matrix[2,rgb["B"]-spectral_spread:rgb["B"]+spectral_spread+1] = 1 #sum up a few bands around each RGB component since no calibration data
     spectral_response_matrix = spectral_response_matrix/spectral_response_matrix.sum(axis=1, keepdims=True)
     return spectral_response_matrix
+
+def test_spatial(pixels_m,pixels_h):
+    spatial_transform_matrix = np.zeros(shape=(pixels_m,pixels_h))
+    for i in range(int(pixels_h/4)):
+        spatial_transform_matrix[2*i:2*(i+1)-1,i] = 1 #combine pixels 2-to-1 NEEDS UPDATING FOR DIFFERENT DOWNSAMPLING VALUES
+    return spatial_transform_matrix

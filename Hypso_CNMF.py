@@ -8,7 +8,8 @@ import utilities as util
 import os
 from CNMF import CNMF
 
-data_string, name = util.Get_path()
+#data_string, name = util.Get_path()
+data_string, name = "C:\\Users\\philipdb\\Desktop\\Project_work\\code\\Non-Negative_Matrix_factorization\\hypso_1_datacubes\\mjosa_2023-04-22_0932Z-l1a_mini.txt", "mjosa_2023-04-22_0932Z-l1a_mini"
 if not os.path.exists(f"output_images\\{name}"):
         os.mkdir(f"output_images\\{name}")
 precision = np.float64
@@ -21,7 +22,8 @@ rgb = {
 original_size = (200,200,120)
 #original_size = (598, 1092, 120)
 #original_size = (956, 684, 120) #TODO implement wide/nominal check and autoset size
-pix_coords = [0,150,0,150]
+pix_coords = [0,200,0,200]
+
 arr = util.Get_subset(data_string, original_size, pix_coords)
 bands = arr.shape[2]
 arr = util.normalize(arr.astype(precision)) #Unsure what sort of precision is required here
@@ -36,15 +38,12 @@ lowres_downsampled = util.Downsample(arr, sigma=sigma, downsampling_factor=downs
 
 save_HSI_as_RGB(lowres_downsampled, name=f"{name}\\Downscaled.png", rgb=rgb) #Save HSI
 
-endmember_count = 40
+endmember_count = 30
 
 spatial_transform_matrix = util.Gen_downsampled_spatial(downsample_factor,size).transpose() #Generate spatial transform for downsampling
 
-spectral_response_matrix = util.Gen_spectral(rgb=rgb, bands=bands, spectral_spread=2)
+spectral_response_matrix = util.Gen_spectral(rgb=rgb, bands=bands, spectral_spread=5)
 
 Upscaled_datacube = CNMF(lowres_downsampled, rgb_representation, spatial_transform_matrix, spectral_response_matrix, endmember_count)
 
-print(Upscaled_datacube.shape)
-
-#save_HSI_as_RGB(error, name=f"{name}\\Error.png", size=size, R_band=rgb["R"], G_band=rgb["G"], B_band=rgb["B"])
 save_HSI_as_RGB(Upscaled_datacube, name=f"{name}\\Output.png", rgb=rgb)

@@ -4,7 +4,7 @@ from scipy.ndimage import gaussian_filter
 from VCA_master.VCA import vca
 import loader as ld
 from saver import save_HSI_as_RGB
-from utilities import Cost
+import utilities as util
 
 data_string = ".\\data\\APEX_OSD_Package_1.0\\APEX_osd_V1_calibr_cube"
 
@@ -17,13 +17,14 @@ rgb = {
 }
 
 arr = ld.load_envi(precision=precision, path=data_string, x_start=300, x_end=400, y_start=300, y_end=400)
+arr = util.normalize(arr)
 size = arr.shape
-arr_flattened = ld.flatten_datacube(arr)
+arr_flattened = arr.reshape(size[2],size[0]*size[1])
 
-save_HSI_as_RGB(arr, name="Original.png")
+save_HSI_as_RGB(arr, name="Original.png", rgb=rgb)
 
-rgb_representation = ld.load_RGB(arr, R_band=rgb["R"], G_band=rgb["G"], B_band=rgb["B"])
-rgb_flattened = ld.flatten_datacube(rgb_representation)
+rgb_representation = arr[:,:,[rgb["R"],rgb["G"],rgb["B"]]]
+rgb_flattened = rgb_representation.reshape(3,size[0]*size[1])
 
 sigma = 1
 downsampling_factor = 2
@@ -32,10 +33,10 @@ downscaled_size = (int(size[0]/downsampling_factor), int(size[1]/downsampling_fa
 
 blurred = gaussian_filter(arr, sigma=(sigma, sigma, 0), mode='reflect').astype(precision)
 lowres_downsampled = np.zeros(shape=downscaled_size)
-save_HSI_as_RGB(blurred, name="Downsampled.png")
+save_HSI_as_RGB(blurred, name="Downsampled.png", rgb=rgb)
 lowres_downsampled[:,:,:] = blurred[::downsampling_factor,::downsampling_factor,:]
-lowres_downsampled_flattened = ld.flatten_datacube(lowres_downsampled)
-save_HSI_as_RGB(lowres_downsampled_flattened, name="Downscaled.png")
+lowres_downsampled_flattened = lowres_downsampled.reshape(downscaled_size[2],downscaled_size[1]*downscaled_size[0])
+save_HSI_as_RGB(lowres_downsampled, name="Downscaled.png", rgb=rgb)
 endmember_count = 40
 bands = lowres_downsampled_flattened.shape[0]
 pixels_h = lowres_downsampled_flattened.shape[1]
@@ -65,8 +66,6 @@ done_i, done_o, count_i, count_o, = False, False, 0, 0
 i_in, i_out = 50, 80
 last_i, last_o =  1E-15, 1E-15
 tol_i, tol_o = 0.000000002, 0
-cost_list = []
-cost_list.append(Cost(np.matmul(w,h),arr_flattened))
 assert w.shape == (bands,endmember_count), "W has dimensions {w.shape}, should have ({bands},{endmember_count})"
 assert w_m.shape == (3,endmember_count), "W_m has dimensions {w_m.shape}, should have (3,{endmember_count})"
 assert h.shape == (endmember_count,pixels_m), "H has dimensions {h.shape}, should have ({endmember_count},{original_resolution})"
@@ -81,7 +80,7 @@ while done_o != True:
     while done_i != True:
         w_m = w_m*np.matmul(rgb_flattened,h.transpose())/np.matmul(w_m,np.matmul(h,h.transpose()))
         h = h*np.matmul(w_m.transpose(),rgb_flattened)/np.matmul(w_m.transpose(),np.matmul(w_m,h))
-        cost = Cost(rgb_flattened, np.matmul(w_m,h))
+        cost = util.Cost(rgb_flattened, np.matmul(w_m,h))
         count_i += 1
         if (last_i-cost)/last_i<tol_i:
             done_i = True
@@ -98,7 +97,7 @@ while done_o != True:
     while done_i != True:
         w = w*np.matmul(lowres_downsampled_flattened,h_h.transpose())/np.matmul(w,np.matmul(h_h,h_h.transpose()))
         h_h = h_h*np.matmul(w.transpose(),lowres_downsampled_flattened)/np.matmul(w.transpose(),np.matmul(w,h_h))
-        cost = Cost(lowres_downsampled_flattened, np.matmul(w,h_h))
+        cost = util.Cost(lowres_downsampled_flattened, np.matmul(w,h_h))
         count_i += 1
         if (last_i-cost)/last_i<tol_i:
             done_i = True
@@ -108,31 +107,10 @@ while done_o != True:
             print("Counted out")
             done_i = True
     count_o += 1
-    cost_list.append(Cost(np.matmul(w,h),arr_flattened))
     if count_o == i_out:
         done_o = True
-result = np.matmul(w,h)
-error = np.abs(result-arr_flattened)
+result = np.matmul(w,h).reshape(size[0],size[1],size[2])
+#error = np.abs(result-arr_flattened)
 
-save_HSI_as_RGB(error,"Error.png")
-save_HSI_as_RGB(result, "Output.png")
-
-pixel = 2075
-startband = 0
-endband = 285
-
-plt.plot(range(len(cost_list)),cost_list,'o')
-
-"""plt.plot(range(startband,endband),arr_flattened[startband:endband,pixel],label="original")
-plt.plot(range(startband,endband),result[startband:endband,pixel],label="fused")
-
-plt.axvline(x=rgb["R"], color='red')
-plt.axvline(x=rgb["B"], color='blue')
-plt.axvline(x=rgb["G"], color='green')
-plt.yscale('log')"""
-plt.yscale('log')
-plt.legend()
-
-plt.show()
-#contrast stretching necessary for some reason
-#view = imshow(data=img, bands=[45, 19, 6], source=SpyFile, stretch=((0.04,0.98),(0.02,0.98),(0.02,0.98))) #R45 G19 B6
+#save_HSI_as_RGB(error,"Error.png", rgb=rgb)
+save_HSI_as_RGB(result, "Output.png", rgb=rgb)
