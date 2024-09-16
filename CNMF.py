@@ -8,7 +8,8 @@ def CNMF(HSI_data: np.array,
          spatial_transform: np.array, 
          spectral_response: np.array, 
          VCA_init: np.array,
-         endmembers=40, loops=(200,5), 
+         endmembers=40, 
+         loops=(200,5), 
          tol=0.0001) -> np.array:
     """_summary_
 
@@ -25,7 +26,7 @@ def CNMF(HSI_data: np.array,
     Returns:
         np.array: _description_
     """
-    precision = np.float32
+    precision = np.float64
     h_bands, m_bands = HSI_data.shape[2], MSI_data.shape[2]
     HSI_data = np.clip(HSI_data,1E-15,np.max(HSI_data)) #Should this be necessary?
     MSI_data = np.clip(MSI_data,1E-15,np.max(MSI_data)) #Should this be necessary?
@@ -40,7 +41,8 @@ def CNMF(HSI_data: np.array,
     h_h = np.ones(shape=(endmembers,h_flat.shape[1]),dtype=precision)/endmembers
 
     #STEP 1a
-    w[:,:] = VCA_init
+    w[:,:] = np.clip(VCA_init,a_min=1e-15,a_max=VCA_init.max())
+    CheckMat(np.matmul(w,h_h),"w*h_h", zero=True)
     h_h = PixelSumToOne(h_h*np.matmul(w.transpose(),h_flat)/np.matmul(w.transpose(),np.matmul(w,h_h)))
     done_i, done_o, count_i, count_o, = False, False, 0, 0
     i_in, i_out = loops[0], loops[1]
@@ -50,20 +52,19 @@ def CNMF(HSI_data: np.array,
     assert h.shape == (endmembers,m_flat.shape[1]), "H has dimensions {h.shape}, should have ({endmembers},{m_flat.shape[1]})"
     assert h_h.shape == (endmembers,h_flat.shape[1]), "H_h has dimensions {h_h.shape}, should have ({endmembers},{h_flat.shape[1]})"
     while done_i != True:
-            #STEP 1b           
-            h_h = PixelSumToOne(h_h*np.matmul(w.transpose(),h_flat)/np.matmul(w.transpose(),np.matmul(w,h_h)))
-            w = w*np.matmul(h_flat,h_h.transpose())/np.matmul(w,np.matmul(h_h,h_h.transpose()))
-            cost = Cost(h_flat, np.matmul(w,h_h))
-            count_i += 1
-            if abs((last_i-cost)/last_i) < tol:
-                done_i = True
-            else:
-                last_i = cost
-            if count_i == i_in:
-                done_i = True
+        #STEP 1b           
+        h_h = PixelSumToOne(h_h*np.matmul(w.transpose(),h_flat)/np.matmul(w.transpose(),np.matmul(w,h_h)))
+        w = w*np.matmul(h_flat,h_h.transpose())/np.matmul(w,np.matmul(h_h,h_h.transpose()))
+        cost = Cost(h_flat, np.matmul(w,h_h))
+        count_i += 1
+        if abs((last_i-cost)/last_i) < tol:
+            done_i = True
+        else:
+            last_i = cost
+        if count_i == i_in:
+            done_i = True
     while done_o != True:
-        CheckMat(np.matmul(w,h_h),"w*h_h", zero=True)
-        CheckMat(np.matmul(w,h), "wxh", zero=True)
+        print(f"Run {count_o}")
         #STEP 2a
         w_m = np.matmul(spectral_response, w)
         h = PixelSumToOne(h*np.matmul(w_m.transpose(),m_flat)/np.matmul(w_m.transpose(),np.matmul(w_m,h))) #Loop?
@@ -105,7 +106,7 @@ def CNMF(HSI_data: np.array,
             done_o = True
     out_flat = np.matmul(w,h)
     out = out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands)
-    return normalize(out)
+    return out
 
 def CheckMat(data, name, zero = False): #TODO
     assert not np.any(np.isinf(data)), f"Matrix {name} has infinite values"
@@ -118,12 +119,10 @@ def PixelSumToOne(data: np.array) -> np.array: #TODO
     pixel_sums = np.sum(data, axis=0)
     return data/pixel_sums
 
-def Get_VCA(string: str, endmembers: int): #TODO
-    shape = ld.load_l1b_shape(string)
-    coords = [0,shape[0],0,shape[1]]
-    data = ld.load_l1b_cube(string, coords)
-    print(data.shape)
+def Get_VCA(string: str, endmembers: int, coords=[0,0,0,0]): #TODO
+    data = ld.load_l1b_cube(string)
+    if coords != [0,0,0,0]:
+        data=data[coords[0]:coords[1],coords[2]:coords[3]]
     h_flat = data.reshape(data.shape[0]*data.shape[1],data.shape[2]).T
-    Ae, _, _ = vca(h_flat, endmembers, verbose=True, snr_input=50)
-    print("Total VCA calculated")
+    Ae, _, _ = vca(h_flat, endmembers, verbose=True, snr_input=30)
     return Ae

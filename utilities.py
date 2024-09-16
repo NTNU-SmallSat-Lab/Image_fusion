@@ -82,11 +82,15 @@ def unflatten_datacube(Data, size=(0,0)):
 
 def save_RGB(data, name):
     assert data.shape[2] == 3, "Colour channels != 3"
-    # Extract bands for R, G, B
     path = f"output_images\\{name}"
     img = Image.fromarray(data)
     img.save(path)
     return
+
+def save_grayscale_image(image_array: np.ndarray, name: str):
+    path = f"output_images\\{name}"
+    image = Image.fromarray(image_array.astype(np.uint8), mode='L')    
+    image.save(path)
 
 def Downsample(data: np.array, sigma=1, downsampling_factor=2) -> np.array:
     assert (data.shape[0]%downsampling_factor == 0) and (data.shape[1]%downsampling_factor == 0), "Resolution must be whole multiple of downsample factor"
@@ -123,5 +127,7 @@ def test_spatial(pixels_m,pixels_h):
     return spatial_transform_matrix
 
 def get_error(data1, data2):
-     error = np.abs((data1-data2)/(data2+1e-15))
-     return normalize(error)
+    error = np.abs((data1-data2))
+    summed_error = np.sum(error/((data1+data2)/2), axis=2)
+    summed_error = (summed_error*255/summed_error.max()).astype(np.uint8)
+    return summed_error

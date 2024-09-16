@@ -2,6 +2,7 @@ import numpy as np
 import spectral.io.envi as envi
 import netCDF4 as nc
 from pathlib import Path
+import utilities as util
 
 def load_envi(precision, path, x_start=0, x_end=0, y_start=0, y_end=0):
     """
@@ -42,16 +43,9 @@ def load_l1b_shape(string: Path): #TODO doc
         shape = rootgrp.groups["products"].variables["Lt"][:].shape #lines, samples, bands
         return shape
 
-def load_l1b_cube(string: Path, coords: list[int]): #TODO doc
+def load_l1b_cube(string: Path): #TODO doc
     assert string.name.endswith('l1b.nc'), "File is not l1b processed"
     with nc.Dataset(string, "r", format="NETCDF4") as f:
         group = f.groups["products"]
-        data = np.array(group.variables["Lt"][coords[0]:coords[1],coords[2]:coords[3],:], dtype=np.float64)
+        data = np.array(group.variables["Lt"][:], dtype=np.float64)
         return data
-
-def load_l1b_rgb(string: Path, rgb: dict[int]): #TODO doc
-    assert string.name.endswith('l1b.nc'), "File is not l1b processed"
-    with nc.Dataset(string, format="NETCDF4") as f:
-        group = f.groups["products"]
-        RGB = np.array(group.variables["Lt"][:,:,[rgb["R"],rgb["G"],rgb["B"]]], dtype=np.float64)
-    return RGB
