@@ -1,16 +1,29 @@
 import numpy as np
 from VCA_master.VCA import vca
 from utilities import Cost, normalize
+import loader as ld
 
-def CNMF(HSI_data: np.array, MSI_data: np.array, spatial_transform: np.array, spectral_response: np.array, endmembers=40, loops=(200,5), tol=0.0001) -> np.array:
-    """Upscales HSI image to MSI resolution using coupled non-negative matrix factorisation
-        
+def CNMF(HSI_data: np.array, 
+         MSI_data: np.array, 
+         spatial_transform: np.array, 
+         spectral_response: np.array, 
+         VCA_init: np.array,
+         endmembers=40, loops=(200,5), 
+         tol=0.0001) -> np.array:
+    """_summary_
+
     Args:
-        HSI_data (np.array): Low spatial/high spectral resolution HSI data (x,y,b)
-        MSI_data (np.array): High spatial/low spectral resolution MSI data (x,y,b)
+        HSI_data (np.array): _description_
+        MSI_data (np.array): _description_
+        spatial_transform (np.array): _description_
+        spectral_response (np.array): _description_
+        VCA_init (np.array): _description_
+        endmembers (int, optional): _description_. Defaults to 40.
+        loops (tuple, optional): _description_. Defaults to (200,5).
+        tol (float, optional): _description_. Defaults to 0.0001.
 
     Returns:
-        tuple[np.array,np.array]: Upscaled HSI data
+        np.array: _description_
     """
     precision = np.float32
     h_bands, m_bands = HSI_data.shape[2], MSI_data.shape[2]
@@ -26,10 +39,8 @@ def CNMF(HSI_data: np.array, MSI_data: np.array, spatial_transform: np.array, sp
     w_m = np.zeros(shape=(m_bands, endmembers))
     h_h = np.ones(shape=(endmembers,h_flat.shape[1]),dtype=precision)/endmembers
 
-    Ae, _, _ = vca(h_flat, endmembers, verbose=False)
-
     #STEP 1a
-    w[:,:] = Ae[:,:]
+    w[:,:] = VCA_init
     h_h = PixelSumToOne(h_h*np.matmul(w.transpose(),h_flat)/np.matmul(w.transpose(),np.matmul(w,h_h)))
     done_i, done_o, count_i, count_o, = False, False, 0, 0
     i_in, i_out = loops[0], loops[1]
@@ -96,13 +107,23 @@ def CNMF(HSI_data: np.array, MSI_data: np.array, spatial_transform: np.array, sp
     out = out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands)
     return normalize(out)
 
-def CheckMat(data, name, zero = False):
+def CheckMat(data, name, zero = False): #TODO
     assert not np.any(np.isinf(data)), f"Matrix {name} has infinite values"
     assert not np.any(np.isnan(data)), f"Matrix {name} has NaN values"
     if zero:
         assert not np.any(data == 0), f"Matrix {name} has Zero values"
 
-def PixelSumToOne(data: np.array) -> np.array:
+def PixelSumToOne(data: np.array) -> np.array: #TODO
     assert len(data.shape) == 2, "Array incorrectly dimensioned"
     pixel_sums = np.sum(data, axis=0)
     return data/pixel_sums
+
+def Get_VCA(string: str, endmembers: int): #TODO
+    shape = ld.load_l1b_shape(string)
+    coords = [0,shape[0],0,shape[1]]
+    data = ld.load_l1b_cube(string, coords)
+    print(data.shape)
+    h_flat = data.reshape(data.shape[0]*data.shape[1],data.shape[2]).T
+    Ae, _, _ = vca(h_flat, endmembers, verbose=True, snr_input=50)
+    print("Total VCA calculated")
+    return Ae
