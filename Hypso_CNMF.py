@@ -1,17 +1,14 @@
 import numpy as np
-from saver import save_HSI_as_RGB
+import saver as sv
 import utilities as util
 import os
 from CNMF import CNMF, Get_VCA
 import loader as ld
 import matplotlib.pyplot as plt
+from PIL import Image
 
 
 data_string, name = util.Get_path()
-
-if not os.path.exists(f"output_images\\{name}"):
-        os.mkdir(f"output_images\\{name}")
-precision = np.float64
 
 rgb = {
     "R": 72,
@@ -19,16 +16,23 @@ rgb = {
     "B": 15
 }
 
-endmember_count = 40
+endmember_count = 2
+"""x_start = int(input("x_start: "))
+x_end = int(input("x_end: "))
+y_start = int(input("y_start"))
+y_end = int(input("y_end"))"""
 
-pix_coords = [0,304,0,304]
+x_start, x_end, y_start, y_end = 0, 400, 0, 400
+pix_coords = [x_start,x_end,y_start,y_end]
+
 VCA_init = Get_VCA(data_string, endmember_count)
 
-full_arr = util.normalize(ld.load_l1b_cube(data_string))
+full_arr = ld.load_l1b_cube(data_string)
 
-arr = full_arr[pix_coords[0]:pix_coords[1],pix_coords[2]:pix_coords[3],:]
+arr = full_arr[x_start:x_end,y_start:y_end,:]
+arr = arr/arr.max()
 bands = full_arr.shape[2]
-size = (pix_coords[1]-pix_coords[0],pix_coords[3]-pix_coords[2])
+size = (x_end-x_start,y_end-y_start)
 downsample_factor = 4
 sigma = 1
 
@@ -41,8 +45,9 @@ spatial_transform_matrix = util.Gen_downsampled_spatial(downsample_factor,size).
 
 spectral_response_matrix = util.Gen_spectral(rgb=rgb, bands=bands, spectral_spread=3)
 
-Upscaled_datacube = CNMF(lowres_downsampled, rgb_representation, spatial_transform_matrix, spectral_response_matrix, VCA_init, endmember_count)
-
+Upscaled_datacube, endmembers, abundances = CNMF(lowres_downsampled, rgb_representation, spatial_transform_matrix, spectral_response_matrix, VCA_init, endmember_count)
+Upscaled_datacube = Upscaled_datacube/Upscaled_datacube.max()
+arr = arr/arr.max()
 error = util.get_error(Upscaled_datacube,arr)
 error_rgb = np.stack([error] * 3, axis=-1)
 
@@ -50,15 +55,14 @@ top = np.hstack([arr[:,:,[72, 43, 15]],upsized_image[:,:,[72, 43, 15]]])
 bottom = np.hstack([Upscaled_datacube[:,:,[72, 43, 15]],error_rgb])
 final_image = np.vstack([top,bottom])
 
-save_HSI_as_RGB(final_image, name=f"{name}\\Final_{downsample_factor}DS_{endmember_count}em.png", rgb=rgb)
-
 spec_error = util.get_spectral_error(Upscaled_datacube, arr)
-plt.figure(figsize=(8,4))
-plt.plot(spec_error, linestyle='-', label='Spectral error sum')
-plt.vlines(x=[72, 43, 15], ymin=0, ymax=spec_error.max(), colors=['r', 'g', 'b'])
-plt.title('Spectral error')
-plt.xlabel('bands')
-plt.ylabel('Error')
-plt.grid(True)
-plt.legend()
-plt.show()
+
+save_path = f"outputs\\{name}_{x_start}-{x_end}x_{y_start}-{y_end}y_{endmember_count}EM\\"
+
+if not os.path.exists(save_path):
+        os.mkdir(save_path)
+
+Image.fromarray((final_image*255).astype(np.uint8)).save(f"{save_path}\\final_image.png")
+
+sv.save_spec_error(spec_error=spec_error, path=save_path)
+sv.save_endmembers(endmembers, abundances, size, save_path)

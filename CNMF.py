@@ -106,7 +106,7 @@ def CNMF(HSI_data: np.array,
             done_o = True
     out_flat = np.matmul(w,h)
     out = out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands)
-    return out
+    return out, w, h
 
 def CheckMat(data, name, zero = False): #TODO
     assert not np.any(np.isinf(data)), f"Matrix {name} has infinite values"

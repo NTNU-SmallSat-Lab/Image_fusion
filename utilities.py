@@ -2,7 +2,7 @@ import numpy as np
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageOps
 from math import sqrt
 from scipy.ndimage import gaussian_filter
 
@@ -127,10 +127,13 @@ def test_spatial(pixels_m,pixels_h):
     return spatial_transform_matrix
 
 def get_error(data1, data2):
-    error = np.abs((data1-data2))
-    summed_error = np.sum(error/((data1+data2)/2), axis=2)
-    summed_error = (summed_error*255/summed_error.max()).astype(np.uint8)
-    return summed_error
+    error_percent = np.mean(100*np.abs(data1-data2)/data1, axis=2)
+    error_log = np.clip(np.log(error_percent*100), a_min=0, a_max=None)
+    perspective_bar = np.linspace(start=0.1, stop=np.log(10000), num=data1.shape[1])
+    error_log[:,-10:] = np.tile(perspective_bar, (10,1)).T
+    error_log = (error_log/error_log.max())
+    #error_percent = error_percent/error_percent.max()
+    return error_log
 
 def get_spectral_error(data1, data2):
      error = np.abs(data1-data2)

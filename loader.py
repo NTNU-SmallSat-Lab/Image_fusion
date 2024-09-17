@@ -47,5 +47,5 @@ def load_l1b_cube(string: Path): #TODO doc
     assert string.name.endswith('l1b.nc'), "File is not l1b processed"
     with nc.Dataset(string, "r", format="NETCDF4") as f:
         group = f.groups["products"]
-        data = np.array(group.variables["Lt"][:,:,3:], dtype=np.float64)
+        data = np.array(group.variables["Lt"][:,:,4:116], dtype=np.float64)
         return data
