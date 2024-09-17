@@ -131,3 +131,8 @@ def get_error(data1, data2):
     summed_error = np.sum(error/((data1+data2)/2), axis=2)
     summed_error = (summed_error*255/summed_error.max()).astype(np.uint8)
     return summed_error
+
+def get_spectral_error(data1, data2):
+     error = np.abs(data1-data2)
+     summed_error = np.mean((error/(data1+data2)/2), axis=(0,1))
+     return summed_error
