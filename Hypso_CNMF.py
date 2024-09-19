@@ -12,16 +12,16 @@ data_string, name = util.Get_path()
 
 rgb = [72, 43, 15]
 
-endmember_count = 40
+endmember_count = 30
 """x_start = int(input("x_start: "))
 x_end = int(input("x_end: "))
 y_start = int(input("y_start"))
 y_end = int(input("y_end"))"""
 
-x_start, x_end, y_start, y_end = 0, 200, 0, 200
+x_start, x_end, y_start, y_end = 300, 400, 300, 400
 pix_coords = [x_start,x_end,y_start,y_end]
 
-VCA_init = Get_VCA(data_string, endmember_count)
+VCA_init = Get_VCA(data_string, endmember_count, coords=pix_coords)
 
 full_arr = ld.load_l1b_cube(data_string)
 
@@ -37,7 +37,7 @@ upsized_image = np.repeat(np.repeat(lowres_downsampled, downsample_factor, axis=
 
 spatial_transform_matrix = util.Gen_downsampled_spatial(downsample_factor,size).transpose() #Generate spatial transform for downsampling
 
-spectral_response_matrix = util.Gen_spectral(rgb=rgb, bands=bands, spectral_spread=10)
+spectral_response_matrix = util.Gen_spectral(rgb=rgb, bands=bands, spectral_spread=3)
 
 rgb_representation = np.zeros(shape=(size[0], size[1], 3))
 #R

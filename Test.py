@@ -1,15 +1,27 @@
-import utilities as util
 import numpy as np
-import netCDF4 as nc
-import loader as ld
+from PIL import Image
 
-rgb = [72, 43, 15]
+img = Image.open("Output_filled.PNG")
 
-bands = 120
-spectral_response_matrix = util.Gen_spectral(rgb=rgb, bands=bands, spectral_spread=1)
+data = np.asarray(img, dtype=np.uint8)
 
-multiply = np.stack([spectral_response_matrix[0]]*200, axis=-1)
-multiply = np.stack([multiply]*200, axis=-1)
-multiply = multiply.transpose(1,2,0)
+data = data[:,:,0:3]
 
-print(multiply.shape)
+start_nm = 350
+end_nm = 700
+start_level = 0.0
+end_level = 0.5
+
+level = np.zeros(shape=(data.shape[0],4),dtype=np.float64)
+
+for i in range(data.shape[0]):
+    level[i,0] = 350+350*i/data.shape[1]
+    for j in range(data.shape[1]):
+        if data[i,j, 0] == 255:
+            level[i, 1] = 0.5*j/data.shape[0]
+        if data[i,j, 1] == 255:
+            level[i, 2] = 0.5*j/data.shape[0]
+        if data[i,j, 2] == 255:
+            level[i, 3] = 0.5*j/data.shape[0]
+
+np.savetxt(x=level, fname="RGB_levels")
