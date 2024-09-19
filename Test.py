@@ -3,6 +3,13 @@ import numpy as np
 import netCDF4 as nc
 import loader as ld
 
-data_string, name = util.Get_path()
+rgb = [72, 43, 15]
 
-arr = ld.load_l1b_cube(data_string)
+bands = 120
+spectral_response_matrix = util.Gen_spectral(rgb=rgb, bands=bands, spectral_spread=1)
+
+multiply = np.stack([spectral_response_matrix[0]]*200, axis=-1)
+multiply = np.stack([multiply]*200, axis=-1)
+multiply = multiply.transpose(1,2,0)
+
+print(multiply.shape)

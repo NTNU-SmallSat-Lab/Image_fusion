@@ -1,5 +1,5 @@
 import numpy as np
-import saver as sv
+import Plotting as sv
 import utilities as util
 import os
 from CNMF import CNMF, Get_VCA
@@ -10,19 +10,15 @@ from PIL import Image
 
 data_string, name = util.Get_path()
 
-rgb = {
-    "R": 72,
-    "G": 43,
-    "B": 15
-}
+rgb = [72, 43, 15]
 
-endmember_count = 2
+endmember_count = 40
 """x_start = int(input("x_start: "))
 x_end = int(input("x_end: "))
 y_start = int(input("y_start"))
 y_end = int(input("y_end"))"""
 
-x_start, x_end, y_start, y_end = 0, 400, 0, 400
+x_start, x_end, y_start, y_end = 0, 200, 0, 200
 pix_coords = [x_start,x_end,y_start,y_end]
 
 VCA_init = Get_VCA(data_string, endmember_count)
@@ -36,14 +32,31 @@ size = (x_end-x_start,y_end-y_start)
 downsample_factor = 4
 sigma = 1
 
-rgb_representation = arr[:,:,[rgb["R"],rgb["G"],rgb["B"]]] #Generate RGB representation of original MSI
-
 lowres_downsampled = util.Downsample(arr, sigma=sigma, downsampling_factor=downsample_factor) #Generate downsampled HSI
 upsized_image = np.repeat(np.repeat(lowres_downsampled, downsample_factor, axis=0), downsample_factor, axis=1)
 
 spatial_transform_matrix = util.Gen_downsampled_spatial(downsample_factor,size).transpose() #Generate spatial transform for downsampling
 
-spectral_response_matrix = util.Gen_spectral(rgb=rgb, bands=bands, spectral_spread=3)
+spectral_response_matrix = util.Gen_spectral(rgb=rgb, bands=bands, spectral_spread=10)
+
+rgb_representation = np.zeros(shape=(size[0], size[1], 3))
+#R
+multiply = np.stack([spectral_response_matrix[0]]*size[0], axis=-1)
+multiply = np.stack([multiply]*size[1], axis=-1)
+multiply = multiply.transpose(1,2,0)
+rgb_representation[:,:,0] = np.sum(multiply*arr, axis=2)
+#G
+multiply = np.stack([spectral_response_matrix[1]]*size[0], axis=-1)
+multiply = np.stack([multiply]*size[1], axis=-1)
+multiply = multiply.transpose(1,2,0)
+rgb_representation[:,:,1] = np.sum(multiply*arr, axis=2)
+#B
+multiply = np.stack([spectral_response_matrix[2]]*size[0], axis=-1)
+multiply = np.stack([multiply]*size[1], axis=-1)
+multiply = multiply.transpose(1,2,0)
+rgb_representation[:,:,2] = np.sum(multiply*arr, axis=2)
+
+#rgb_representation = arr[:,:,rgb] #Generate RGB representation of original MSI
 
 Upscaled_datacube, endmembers, abundances = CNMF(lowres_downsampled, rgb_representation, spatial_transform_matrix, spectral_response_matrix, VCA_init, endmember_count)
 Upscaled_datacube = Upscaled_datacube/Upscaled_datacube.max()

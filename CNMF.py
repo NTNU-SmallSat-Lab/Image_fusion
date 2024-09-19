@@ -9,22 +9,22 @@ def CNMF(HSI_data: np.array,
          spectral_response: np.array, 
          VCA_init: np.array,
          endmembers=40, 
-         loops=(200,5), 
-         tol=0.0001) -> np.array:
-    """_summary_
+         loops=(200,5),
+         tol=0.00005) -> list[np.array, np.array, np.array]:
+    """Performs coupled Nonnegative matrix factorisation to upscale HSI data using spatial data from MSI
 
     Args:
-        HSI_data (np.array): _description_
-        MSI_data (np.array): _description_
-        spatial_transform (np.array): _description_
-        spectral_response (np.array): _description_
-        VCA_init (np.array): _description_
-        endmembers (int, optional): _description_. Defaults to 40.
-        loops (tuple, optional): _description_. Defaults to (200,5).
-        tol (float, optional): _description_. Defaults to 0.0001.
+        HSI_data (np.array): low spatial/high spectral resolution datacube shape=(x_h, y_h, b_h)
+        MSI_data (np.array): high spatial/low spectral resolution datacube shape=(x_m, y_m, b_m)
+        spatial_transform (np.array): flattened Spatial transform from HSI to MSI shape=(x_m*y_m,x_h*y_h)
+        spectral_response (np.array): spectral transform from HSI to MSI shape=(b_m, b_h)
+        VCA_init (np.array): Endmember matrix initialization shape=(b_h, endmembers)
+        endmembers (int, optional): number of endmembers. Defaults to 40.
+        loops (tuple, optional): inner and outer loops. Defaults to (200,5).
+        tol (float, optional): inner loop cost tolerance. Defaults to 0.00005.
 
     Returns:
-        np.array: _description_
+        list[np.array, np.array, np.array]: upscaled datacube, endmember spectra, abundances
     """
     precision = np.float64
     h_bands, m_bands = HSI_data.shape[2], MSI_data.shape[2]
@@ -108,21 +108,47 @@ def CNMF(HSI_data: np.array,
     out = out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands)
     return out, w, h
 
-def CheckMat(data, name, zero = False): #TODO
+def CheckMat(data: np.array, name: str, zero = False):
+    """Simple check to ensure matrix well defined
+
+    Args:
+        data (np.array): Matrix to be checked
+        name (string): String to identify matrix in output
+        zero (bool, optional): Whether to check for zeros. Defaults to False.
+    """
     assert not np.any(np.isinf(data)), f"Matrix {name} has infinite values"
     assert not np.any(np.isnan(data)), f"Matrix {name} has NaN values"
     if zero:
         assert not np.any(data == 0), f"Matrix {name} has Zero values"
 
-def PixelSumToOne(data: np.array) -> np.array: #TODO
+def PixelSumToOne(data: np.array) -> np.array:
+    """Modify matrix so sum of each column vector is 1
+
+    Args:
+        data (np.array): matrix shape.len=2
+
+    Returns:
+        np.array: matrix with vectors summed to one
+    """
     assert len(data.shape) == 2, "Array incorrectly dimensioned"
     pixel_sums = np.sum(data, axis=0)
-    return data/pixel_sums
+    new_data = data/pixel_sums
+    return new_data
 
-def Get_VCA(string: str, endmembers: int, coords=[0,0,0,0]): #TODO
+def Get_VCA(string: str, endmembers: int, coords=[0,0,0,0]):
+    """Retrieve endmembers of an l1b datacube using vertex component analysis
+
+    Args:
+        string (str): path to l1b cube
+        endmembers (int): number of endmembers
+        coords (list, optional): Area to retrieve endmembers from (x_start, x_end, y_start, y_end). Defaults to entire datacube.
+
+    Returns:
+        np.array: returns spectral signature matrix shape=(bands,endmembers)
+    """
     data = ld.load_l1b_cube(string)
     if coords != [0,0,0,0]:
-        data=data[coords[0]:coords[1],coords[2]:coords[3]]
+        data=data[coords[0]:coords[1],coords[2]:coords[3],:]
     h_flat = data.reshape(data.shape[0]*data.shape[1],data.shape[2]).T
-    Ae, _, _ = vca(h_flat, endmembers, verbose=True, snr_input=30)
+    Ae, _, _ = vca(h_flat, endmembers, verbose=True)
     return Ae

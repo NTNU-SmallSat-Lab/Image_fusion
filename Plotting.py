@@ -1,20 +1,8 @@
 import numpy as np
-from utilities import unflatten_datacube, save_RGB
+from utilities import save_RGB
 import matplotlib.pyplot as plt
 from io import BytesIO
 from PIL import Image
-
-def save_HSI_as_RGB(Data, name, rgb):
-    assert len(Data.shape) == 3, "Data array is not 3 dimensional"
-    # Extract bands for R, G, B
-    R = (Data[:, :, 0]*255).astype(np.uint8)
-    G = (Data[:, :, 1]*255).astype(np.uint8)
-    B = (Data[:, :, 2]*255).astype(np.uint8)
-
-    rgb_image = np.stack((R, G, B), axis=-1)
-
-    save_RGB(rgb_image, name)
-    return
 
 def save_spec_error(spec_error, path):
     plt.figure(figsize=(8,4))
@@ -22,7 +10,7 @@ def save_spec_error(spec_error, path):
     plt.vlines(x=[72, 43, 15], ymin=0, ymax=spec_error.max(), colors=['r', 'g', 'b'])
     plt.title('Spectral error')
     plt.xlabel('bands')
-    plt.ylabel('Error')
+    plt.ylabel('Error [%]')
     plt.grid(True)
     plt.legend()
     plt.savefig(f"{path}\\Spectral_error.png")
@@ -55,3 +43,8 @@ def save_endmembers(endmembers, abundances, shape, path):
     array = array+abundance_array
     img = Image.fromarray(array.astype(np.uint8))
     img.save(f"{path}\\endmembers.png")
+
+def save_HSI_as_RGB(Data, name):
+    assert len(Data.shape) == 3, "Data array is not 3 dimensional"
+    save_RGB((Data*255).astype(np.uint8), name)
+    return

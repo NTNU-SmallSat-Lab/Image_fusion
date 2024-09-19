@@ -56,41 +56,12 @@ def Get_subset(path, size, subset) -> np.array:
         subset_array = array[subset[0]:subset[1],subset[2]:subset[3],:]
         return subset_array
 
-def flatten_datacube(Data):
-    """
-    Takes in datacube (x,y,b) and outputs flattened datacube (b,xy)
-    """
-    flattened_data = np.zeros(shape=(Data.shape[2],Data.shape[0]*Data.shape[1]))
-    for i in range(Data.shape[0]):
-        for j in range(Data.shape[1]):
-            flattened_data[:,i*Data.shape[1]+j] = Data[i,j,:]
-    return flattened_data
-    
-
-def unflatten_datacube(Data, size=(0,0)):
-    """
-    Takes in flattened datacube (b, xy) and outputs datacube (x,y,b)
-    """
-    if size==(0,0):
-        assert sqrt(Data.shape[1])%1 == 0, "Inferred size invalid, unable to unflatten array"
-        size = (sqrt(Data.shape[1]),sqrt(Data.shape[1]))
-    unflattened_datacube = np.zeros(shape=(size[0],size[1],Data.shape[0]))
-    for i in range(size[0]):
-        for j in range(size[1]):
-            unflattened_datacube[i,j,:] = Data[:,i*size[0]+j]
-    return unflattened_datacube
-
 def save_RGB(data, name):
     assert data.shape[2] == 3, "Colour channels != 3"
     path = f"output_images\\{name}"
     img = Image.fromarray(data)
     img.save(path)
     return
-
-def save_grayscale_image(image_array: np.ndarray, name: str):
-    path = f"output_images\\{name}"
-    image = Image.fromarray(image_array.astype(np.uint8), mode='L')    
-    image.save(path)
 
 def Downsample(data: np.array, sigma=1, downsampling_factor=2) -> np.array:
     assert (data.shape[0]%downsampling_factor == 0) and (data.shape[1]%downsampling_factor == 0), "Resolution must be whole multiple of downsample factor"
@@ -114,28 +85,21 @@ def Gen_downsampled_spatial(downsampling_factor, size) -> np.array:
 
 def Gen_spectral(rgb, bands, spectral_spread) -> np.array:
     spectral_response_matrix = np.zeros(shape=(3,bands))
-    spectral_response_matrix[0,rgb["R"]-spectral_spread:rgb["R"]+spectral_spread+1] = 1
-    spectral_response_matrix[1,rgb["G"]-spectral_spread:rgb["G"]+spectral_spread+1] = 1
-    spectral_response_matrix[2,rgb["B"]-spectral_spread:rgb["B"]+spectral_spread+1] = 1 #sum up a few bands around each RGB component since no calibration data
+    spectral_response_matrix[0,rgb[0]-spectral_spread:rgb[0]+spectral_spread+1] = 1
+    spectral_response_matrix[1,rgb[1]-spectral_spread:rgb[1]+spectral_spread+1] = 1
+    spectral_response_matrix[2,rgb[2]-spectral_spread:rgb[2]+spectral_spread+1] = 1 #sum up a few bands around each RGB component since no calibration data
     spectral_response_matrix = spectral_response_matrix/spectral_response_matrix.sum(axis=1, keepdims=True)
     return spectral_response_matrix
 
-def test_spatial(pixels_m,pixels_h):
-    spatial_transform_matrix = np.zeros(shape=(pixels_m,pixels_h))
-    for i in range(int(pixels_h/4)):
-        spatial_transform_matrix[2*i:2*(i+1)-1,i] = 1 #combine pixels 2-to-1 NEEDS UPDATING FOR DIFFERENT DOWNSAMPLING VALUES
-    return spatial_transform_matrix
-
 def get_error(data1, data2):
-    error_percent = np.mean(100*np.abs(data1-data2)/data1, axis=2)
+    error_percent = np.mean(100*np.abs((data1-data2)/data1), axis=2)
     error_log = np.clip(np.log(error_percent*100), a_min=0, a_max=None)
-    perspective_bar = np.linspace(start=0.1, stop=np.log(10000), num=data1.shape[1])
+    perspective_bar = np.linspace(start=0, stop=np.log(10000), num=data1.shape[0])
     error_log[:,-10:] = np.tile(perspective_bar, (10,1)).T
     error_log = (error_log/error_log.max())
-    #error_percent = error_percent/error_percent.max()
     return error_log
 
 def get_spectral_error(data1, data2):
      error = np.abs(data1-data2)
-     summed_error = np.mean((error/(data1+data2)/2), axis=(0,1))
+     summed_error = np.mean((100*error/data1), axis=(0,1))
      return summed_error
