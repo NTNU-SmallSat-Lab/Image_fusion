@@ -2,9 +2,9 @@ import numpy as np
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename
 from pathlib import Path
-from PIL import Image, ImageOps
-from math import sqrt
+from PIL import Image
 from scipy.ndimage import gaussian_filter
+import pandas as pd
 
 def normalize(image):
         """
@@ -34,8 +34,17 @@ def Cost(Data1, Data2, band1=0, band2=0):
         cost = np.linalg.norm(Data1[band1:band2,:]-Data2[band1:band2,:],ord="fro")**2
         return cost
 
-def Wavelength_to_band(lmda, sat_obj):
-        return np.argmin(abs(sat_obj.spectral_coefficients - lmda))
+def Wavelength_to_band(wavelength):
+    wavelengths = np.asarray(pd.read_csv("Calibration_data\\spectral_bands_Hypso-1_v1.csv"))[:,0]
+    for i in range(wavelengths.shape[0]):
+         if (wavelengths[i] < wavelength) and (wavelengths[i+1]>wavelength):
+              return i
+    return -1
+
+def band_to_wavelength(band: int):
+    wavelengths = np.asarray(pd.read_csv("Calibration_data\\spectral_bands_Hypso-1_v1.csv"))[:,0]
+    return (wavelengths[band],wavelengths[band+1])
+    
 
 def Get_path():
         # Initialize Tkinter and hide the main window
@@ -91,15 +100,10 @@ def Gen_spectral(rgb, bands, spectral_spread) -> np.array:
     spectral_response_matrix = spectral_response_matrix/spectral_response_matrix.sum(axis=1, keepdims=True)
     return spectral_response_matrix
 
-def get_error(data1, data2):
-    error_percent = np.mean(100*np.abs((data1-data2)/data1), axis=2)
-    error_log = np.clip(np.log(error_percent*100), a_min=0, a_max=None)
-    perspective_bar = np.linspace(start=0, stop=np.log(10000), num=data1.shape[0])
-    error_log[:,-10:] = np.tile(perspective_bar, (10,1)).T
-    error_log = (error_log/error_log.max())
-    return error_log
-
-def get_spectral_error(data1, data2):
-     error = np.abs(data1-data2)
-     summed_error = np.mean((100*error/data1), axis=(0,1))
-     return summed_error
+def map_mask_to_bands(mask: np.array, bands: int):
+    output = np.zeros(shape=(mask.shape[1],bands))
+    for i in range(mask.shape[0]):
+        band = Wavelength_to_band(i)
+        if band != -1:
+            output[:,band] = output[:,band] + mask[i,:].T
+    return output
