@@ -4,6 +4,7 @@ import utilities as util
 import os
 from CNMF import CNMF, Get_VCA
 import loader as ld
+from Test import range
 
 
 data_string, name = util.Get_path()
@@ -16,17 +17,15 @@ x_end = int(input("x_end: "))
 y_start = int(input("y_start"))
 y_end = int(input("y_end"))"""
 
-x_start, x_end, y_start, y_end = 0, 100, 0, 100
-pix_coords = [x_start,x_end,y_start,y_end]
+x_start, x_end, y_start, y_end = 0, 200, 0, 200
+pix_coords = [x_start,x_end,y_start,y_end] #only needed if taking VCA of section, not entire image
 
 VCA_init = Get_VCA(data_string, endmember_count)
 
 full_arr = ld.load_l1b_cube(data_string)
 
-arr = Normalize(full_arr[x_start:x_end,y_start:y_end,:])
-for i in range(arr.shape[2]):
-        print(f"band {i+4} mean: {np.mean(arr[:,:,i])}")
-bands = full_arr.shape[2]
+arr = full_arr[x_start:x_end,y_start:y_end,:]
+
 size = (x_end-x_start,y_end-y_start)
 downsample_factor = 4
 sigma = 1
@@ -39,26 +38,7 @@ spatial_transform_matrix = util.Gen_downsampled_spatial(downsample_factor,size).
 rgb_mask = np.loadtxt("Calibration_data\\RGB_mask.txt")
 spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],112)
 
-#spectral_response_matrix = util.Gen_spectral(rgb=rgb, bands=bands, spectral_spread=3)
 rgb_representation = np.matmul(arr,spectral_response_matrix.T)
-#rgb_representation = np.zeros(shape=(size[0], size[1], 3))
-"""#R
-multiply = np.stack([spectral_response_matrix[0]]*size[0], axis=-1)
-multiply = np.stack([multiply]*size[1], axis=-1)
-multiply = multiply.transpose(1,2,0)
-rgb_representation[:,:,0] = np.sum(multiply*arr, axis=2)
-#G
-multiply = np.stack([spectral_response_matrix[1]]*size[0], axis=-1)
-multiply = np.stack([multiply]*size[1], axis=-1)
-multiply = multiply.transpose(1,2,0)
-rgb_representation[:,:,1] = np.sum(multiply*arr, axis=2)
-#B
-multiply = np.stack([spectral_response_matrix[2]]*size[0], axis=-1)
-multiply = np.stack([multiply]*size[1], axis=-1)
-multiply = multiply.transpose(1,2,0)
-rgb_representation[:,:,2] = np.sum(multiply*arr, axis=2)"""
-
-#rgb_representation = arr[:,:,rgb] #Generate RGB representation of original MSI
 
 Upscaled_datacube, endmembers, abundances = CNMF(lowres_downsampled, 
                                                  rgb_representation, 
@@ -67,22 +47,11 @@ Upscaled_datacube, endmembers, abundances = CNMF(lowres_downsampled,
                                                  VCA_init, 
                                                  endmember_count)
 
-"""Upscaled_datacube = Upscaled_datacube/Upscaled_datacube.max()
-arr = arr/arr.max()
-error_rgb = np.stack([error] * 3, axis=-1)
-
-top = np.hstack([arr[:,:,[72, 43, 15]],upsized_image[:,:,[72, 43, 15]]])
-bottom = np.hstack([Upscaled_datacube[:,:,[72, 43, 15]],error_rgb])
-final_image = np.vstack([top,bottom])"""
-
-#spec_error = util.get_spectral_error(Upscaled_datacube, arr)
 
 save_path = f"outputs\\{name}_{x_start}-{x_end}x_{y_start}-{y_end}y_{endmember_count}EM\\"
 
 if not os.path.exists(save_path):
         os.mkdir(save_path)
-
-#Image.fromarray((final_image*255).astype(np.uint8)).save(f"{save_path}\\final_image.png")
 
 save_final_image(arr, lowres_downsampled, Upscaled_datacube, spectral_response_matrix, save_path)
 save_endmembers(endmembers, abundances, size, save_path)

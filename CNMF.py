@@ -106,7 +106,7 @@ def CNMF(HSI_data: np.array,
         if count_o == i_out:
             done_o = True
     out_flat = np.matmul(w,h)
-    out = Normalize(out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands))
+    out = out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands)
     return out, w, h
 
 def CheckMat(data: np.array, name: str, zero = False):

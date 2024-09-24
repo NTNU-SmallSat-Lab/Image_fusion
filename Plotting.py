@@ -33,7 +33,7 @@ def save_endmembers(endmembers, abundances, shape, path): #Make this better
         plt.figure(figsize=(shape[0]/100,shape[1]/100), dpi=100, facecolor='white', layout='compressed')
         plt.plot(endmembers[:,i])
         plt.axis('off')
-        plt.vlines([103],ymin=0, ymax=endmembers[:,i].max())
+        plt.vlines([103],ymin=0, ymax=endmembers[:,i].max(), lw=0.3)
         buf = BytesIO()
         plt.savefig(buf)
         plt.close()
@@ -102,15 +102,8 @@ def get_error(data1, data2, ax):
     ax.set_title("Error [%]")
     ax.axis('off')
 
-def get_spectral_error(data1, data2):
-     assert not np.any(np.isinf(data1)), "Data1 has infinite values"
-     assert not np.any(np.isnan(data1)), "Data1 has nan values"
-     assert not np.any(np.isinf(data2)), "Data2 has infinite values"
-     assert not np.any(np.isnan(data2)), "Data2 has nan values"
-     data1, data2 = np.clip(data1, a_min=1E-6, a_max=1.0), np.clip(data2, a_min=1E-6, a_max=1.0)
-     with np.errstate(divide='ignore', invalid='ignore'):
-        error = np.abs((data1 - data2) / data1)
-     print(f"Max error: {error.max()}")
+def get_spectral_error(data1, data2): #Likely getting issues due to oxygen absorption
+     error = np.abs((data1 - data2) / data1)
      summed_error = np.mean((100*error), axis=(0,1))
      return summed_error
 
