@@ -14,8 +14,6 @@ def save_spec_error(data1, data2, ax):
     ax2.plot(np.linspace(4,116,end_nm-start_nm),levels[start_nm:end_nm, 0], linestyle='dotted', color='red', label='Red Channel')
     ax2.plot(np.linspace(4,116,end_nm-start_nm),levels[start_nm:end_nm, 1], linestyle='dotted', color='green', label='Green Channel')
     ax2.plot(np.linspace(4,116,end_nm-start_nm),levels[start_nm:end_nm, 2], linestyle='dotted', color='blue', label='Blue Channel')
-    ax2.vlines([103], ymin=0, ymax=spec_error.max())
-    #plt.vlines(x=[72, 43, 15], ymin=0, ymax=spec_error.max(), colors=['r', 'g', 'b'])
     ax.set_xlabel('bands')
     ax.set_ylabel('Error [%]')
     ax2.set_ylabel('Quantum efficiency [%]')
@@ -33,7 +31,6 @@ def save_endmembers(endmembers, abundances, shape, path): #Make this better
         plt.figure(figsize=(shape[0]/100,shape[1]/100), dpi=100, facecolor='white', layout='compressed')
         plt.plot(endmembers[:,i])
         plt.axis('off')
-        plt.vlines([103],ymin=0, ymax=endmembers[:,i].max(), lw=0.3)
         buf = BytesIO()
         plt.savefig(buf)
         plt.close()
@@ -41,7 +38,6 @@ def save_endmembers(endmembers, abundances, shape, path): #Make this better
         img = Image.open(buf)
         image_array = np.asarray(img)
         abundance_map = np.stack([abundances[i,:].T.reshape(shape[0],shape[1],-1)[:,:,0]] * 4, axis=-1)
-        abundance_map = (abundance_map*255)
         abundance_map[:,:,3] = np.ones_like(abundance_map[:,:,3])*255
         array[int(i/5)*shape[0]*2:int(i/5)*shape[0]*2+shape[0],(i%5)*shape[1]:(i%5+1)*shape[1],:] = image_array
         abundance_array[int(i/5)*shape[0]*2+shape[0]:int(i/5+1)*shape[0]*2,(i%5)*shape[1]:(i%5+1)*shape[1],:] = abundance_map
@@ -90,11 +86,13 @@ def save_final_image(Original: np.array, downscaled: np.array, Upscaled: np.arra
     
 
 def get_error(data1, data2, ax):
-    error_percent = np.mean(100 * np.abs((data1 - data2) / (data1+1E-9)), axis=2)
-    cax = ax.imshow(error_percent, interpolation='none', cmap='gray', norm=LogNorm())
-    cbar = plt.colorbar(cax, ax=ax)
+    data1 = Normalize(data1, min=0.01, max=1.0)
+    data2 = Normalize(data2, min=0.01, max=1.0)
+    error_percent = np.mean(100 * np.abs((data1 - data2) / data1), axis=2)
     min_val = np.min(error_percent[error_percent > 0])  # Smallest non-zero value
     max_val = np.max(error_percent)
+    cax = ax.imshow(error_percent, interpolation='none', cmap='gray', norm=LogNorm(vmin=min_val,vmax=max_val))
+    cbar = plt.colorbar(cax, ax=ax)
     ticks = np.logspace(np.log10(min_val), np.log10(max_val), num=5)  # Logarithmic spacing of ticks
     cbar.set_ticks(ticks)
     cbar.ax.minorticks_off()
@@ -103,11 +101,13 @@ def get_error(data1, data2, ax):
     ax.axis('off')
 
 def get_spectral_error(data1, data2): #Likely getting issues due to oxygen absorption
+     data1 = Normalize(data1, min=0.01, max=1.0)
+     data2 = Normalize(data2, min=0.01, max=1.0)
      error = np.abs((data1 - data2) / data1)
-     summed_error = np.mean((100*error), axis=(0,1))
-     return summed_error
+     mean_error = np.mean((100*error), axis=(0,1))
+     return mean_error
 
 def Normalize(data, min=0.0, max=1.0):
     data_min, data_max = data.min(), data.max()
-    data = (data-data_min)*(max-min)/(data_max-data_min)
+    data = (data-data_min)*(max-min)/(data_max-data_min)+min
     return data
