@@ -2,7 +2,7 @@ import numpy as np
 from VCA_master.VCA import vca
 from utilities import Cost
 import loader as ld
-from Plotting import Normalize
+from scipy.optimize import minimize
 
 def CNMF(HSI_data: np.array, 
          MSI_data: np.array, 
@@ -11,7 +11,7 @@ def CNMF(HSI_data: np.array,
          VCA_init: np.array,
          delta=0.9,
          endmembers=40, 
-         loops=(200,5),
+         loops=(10,5),
          tol=0.00005) -> list[np.array, np.array, np.array]:
     """Performs coupled Nonnegative matrix factorisation to upscale HSI data using spatial data from MSI
 
@@ -60,7 +60,7 @@ def CNMF(HSI_data: np.array,
         #STEP 1b
         w[-1,:] = np.ones_like(w[-1,:])
         h_h = h_h*np.matmul(w.transpose(),h_flat)/np.matmul(w.transpose(),np.matmul(w,h_h))
-        w = delta*w*np.matmul(h_flat,h_h.transpose())/np.matmul(w,np.matmul(h_h,h_h.transpose()))
+        w = w*np.matmul(h_flat,h_h.transpose())/np.matmul(w,np.matmul(h_h,h_h.transpose()))
         cost = Cost(h_flat[:-1,:], np.matmul(w[:-1,:],h_h))
         count_i += 1
         if abs((last_i-cost)/last_i) < tol:
@@ -80,7 +80,7 @@ def CNMF(HSI_data: np.array,
         last_i = 1E-15
         while done_i != True:
             #STEP 2b
-            w_m = delta*w_m*np.matmul(m_flat,h.transpose())/np.matmul(w_m,np.matmul(h,h.transpose()))
+            w_m = w_m*np.matmul(m_flat,h.transpose())/np.matmul(w_m,np.matmul(h,h.transpose()))
             w_m[-1,:] = np.ones_like(w_m[-1,:])
             h = h*np.matmul(w_m.transpose(),m_flat)/np.matmul(w_m.transpose(),np.matmul(w_m,h))#Loop?
             cost = Cost(m_flat[:-1,:], np.matmul(w_m[:-1,:],h))
@@ -97,12 +97,12 @@ def CNMF(HSI_data: np.array,
         #Step 3a
         w[-1,:] = np.ones_like(w[-1,:])
         h_h = np.matmul(h,spatial_transform)
-        w = delta*w*np.matmul(h_flat,h_h.transpose())/np.matmul(w,np.matmul(h_h,h_h.transpose()))#Loop?
+        w = w*np.matmul(h_flat,h_h.transpose())/np.matmul(w,np.matmul(h_h,h_h.transpose()))#Loop?
         while done_i != True:
             #STEP 3b
-            w[-1,:] = np.ones_like(w[-1,:])      
+            w[-1,:] = np.ones_like(w[-1,:]) 
             h_h = h_h*np.matmul(w.transpose(),h_flat)/np.matmul(w.transpose(),np.matmul(w,h_h))
-            w = delta*w*np.matmul(h_flat,h_h.transpose())/np.matmul(w,np.matmul(h_h,h_h.transpose()))
+            w = w*np.matmul(h_flat,h_h.transpose())/np.matmul(w,np.matmul(h_h,h_h.transpose()))
             cost = Cost(h_flat, np.matmul(w,h_h))
             count_i += 1
             if abs((last_i-cost)/last_i) < tol:
@@ -114,6 +114,9 @@ def CNMF(HSI_data: np.array,
         count_o += 1
         if count_o == i_out:
             done_o = True
+        """print(f"Mean h per pixel sum: {np.mean(np.sum(h, axis=0))}")
+        print(f"Max h per pixel sum: {np.max(np.sum(h, axis=0))}")
+        print(f"Min h per pixel sum: {np.min(np.sum(h, axis=0))}")"""
     out_flat = np.matmul(w[:-1,:],h)
     out = out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands)
     return out, w[:-1,:], h
@@ -145,7 +148,7 @@ def PixelSumToOne(data: np.array) -> np.array:
     new_data = data/pixel_sums
     return new_data
 
-def Get_VCA(string: str, endmembers: int, coords=[0,0,0,0]):
+def Get_VCA(string: str, endmembers: int, coords=[0,0,0,0], bands=[0,0]):
     """Retrieve endmembers of an l1b datacube using vertex component analysis
 
     Args:
@@ -159,10 +162,8 @@ def Get_VCA(string: str, endmembers: int, coords=[0,0,0,0]):
     data = ld.load_l1b_cube(string)
     if coords != [0,0,0,0]:
         data=data[coords[0]:coords[1],coords[2]:coords[3],:]
+    if bands != [0,0]:
+        data = data[:,:,bands[0]:bands[1]]
     h_flat = data.reshape(data.shape[0]*data.shape[1],data.shape[2]).T
     Ae, _, _ = vca(h_flat, endmembers, verbose=True)
     return Ae
-
-def descent(x, w, h):
-    phi = h/np.matmul(w.T,np.matmul(w,h))
-    h = h + phi*(np.matmul(w.T,x)-np.matmul(w.T,np.matmul(w,h)))

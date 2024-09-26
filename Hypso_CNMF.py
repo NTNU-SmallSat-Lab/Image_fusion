@@ -1,5 +1,5 @@
 import numpy as np
-from Plotting import save_final_image, save_endmembers, Normalize
+from Plotting import save_final_image, save_endmembers_many, Normalize, save_endmembers_few
 import utilities as util
 import os
 from CNMF import CNMF, Get_VCA
@@ -9,14 +9,16 @@ import loader as ld
 data_string, name = util.Get_path()
 
 endmember_count = 10
-delta = 0.9
-tol = 0.001
+delta = 0.2
+tol = 0.00001
+
+loops = (300, 5)
 """x_start = int(input("x_start: "))
 x_end = int(input("x_end: "))
 y_start = int(input("y_start"))
 y_end = int(input("y_end"))"""
 
-x_start, x_end, y_start, y_end = 0, 160, 0, 160
+x_start, x_end, y_start, y_end = 0, 200, 0, 200
 pix_coords = [x_start,x_end,y_start,y_end] #only needed if taking VCA of section, not entire image
 
 VCA_init = Get_VCA(data_string, endmember_count)
@@ -46,6 +48,7 @@ Upscaled_datacube, endmembers, abundances = CNMF(lowres_downsampled,
                                                  VCA_init=VCA_init, 
                                                  endmembers=endmember_count,
                                                  delta=delta,
+                                                 loops=loops,
                                                  tol=tol)
 
 assert not np.any(Upscaled_datacube < 1E-9), "Zero values in output"
@@ -55,5 +58,13 @@ save_path = f"outputs\\{name}_{x_start}-{x_end}x_{y_start}-{y_end}y_{endmember_c
 if not os.path.exists(save_path):
         os.mkdir(save_path)
 
+print(f"Mean abundance per pixel sum: {np.mean(np.sum(abundances, axis=0))}")
+assert abs(np.mean(np.sum(abundances, axis=0))-1) < 0.01, "Abundances do not sum to 1, reduce delta or increase out loop number"
+
 save_final_image(arr, lowres_downsampled, Upscaled_datacube, spectral_response_matrix, save_path)
-save_endmembers(endmembers, abundances, size, save_path)
+if endmember_count > 10:
+        save_endmembers_many(endmembers, abundances, size, save_path)
+else:
+        save_endmembers_few(endmembers, abundances, size, save_path)
+
+print(f"Saved in {save_path}")

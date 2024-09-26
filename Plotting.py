@@ -1,7 +1,8 @@
 import numpy as np
 import utilities as util
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm, Normalize
+from matplotlib.colors import LogNorm
+from matplotlib.ticker import FuncFormatter
 from io import BytesIO
 from PIL import Image
 
@@ -20,8 +21,19 @@ def save_spec_error(data1, data2, ax):
     plt.grid(True)
     plt.legend(loc='upper left')
 
-def save_endmembers(endmembers, abundances, shape, path): #Make this better
+def save_endmembers_many(endmembers, abundances, shape, path): #Make this better
     endmember_count = endmembers.shape[1]
+    order = []
+    for i in range(endmember_count):
+        max_abundance = 0
+        selected = -1
+        for j in range(endmember_count):
+            abundance = np.sum(abundances[j,:])
+            if (abundance > max_abundance) and j not in order:
+                max_abundance = abundance
+                selected = j
+        if selected != -1:
+            order.append(selected)
     if int(endmember_count/5) == 0:
         array = np.zeros(shape=(2*shape[0],endmember_count*shape[1],4))
     else:
@@ -37,7 +49,7 @@ def save_endmembers(endmembers, abundances, shape, path): #Make this better
         buf.seek(0)
         img = Image.open(buf)
         image_array = np.asarray(img)
-        abundance_map = np.stack([abundances[i,:].T.reshape(shape[0],shape[1],-1)[:,:,0]] * 4, axis=-1)
+        abundance_map = np.stack([abundances[order[i],:].T.reshape(shape[0],shape[1],-1)[:,:,0]] * 4, axis=-1)
         abundance_map[:,:,3] = np.ones_like(abundance_map[:,:,3])*255
         array[int(i/5)*shape[0]*2:int(i/5)*shape[0]*2+shape[0],(i%5)*shape[1]:(i%5+1)*shape[1],:] = image_array
         abundance_array[int(i/5)*shape[0]*2+shape[0]:int(i/5+1)*shape[0]*2,(i%5)*shape[1]:(i%5+1)*shape[1],:] = abundance_map
@@ -83,11 +95,55 @@ def save_final_image(Original: np.array, downscaled: np.array, Upscaled: np.arra
     plt.tight_layout()
     plt.savefig(f"{save_path}Output", bbox_inches='tight', dpi=300)
     plt.close(fig)
+
+def save_endmembers_few(endmembers, abundances, shape, save_path):
+    assert endmembers.shape[1] <= 10, "Too many endmembers use save_endmembers_many()"
+    count = endmembers.shape[1]
+    rows = int((count-1)/5)+1
+    fig = plt.figure(figsize=(20,5+5*rows))
+    gs = fig.add_gridspec(1+rows,5)
+    order = []
+    for i in range(count):
+        max_abundance = 0
+        selected = -1
+        for j in range(count):
+            abundance = np.sum(abundances[j,:])
+            if (abundance > max_abundance) and j not in order:
+                max_abundance = abundance
+                selected = j
+        if selected != -1:
+            order.append(selected)
+
+    def scientific_notation(x, pos):
+        return f'{x:.2e}'
+    
+    ax = []
+    ax.append(fig.add_subplot(gs[0,:]))
+    lines = [('-',1), ('dashed', 1), ('dotted',2)]
+    for i in range(count):
+        line = lines[i%3]
+        ax[0].plot(endmembers[:,order[i]],label=f"Spectrum {i}", linestyle=line[0], lw=line[1])
+    ax[0].legend()
+    
+    for i in range(count):
+        ax.append(fig.add_subplot(gs[1+int(i/5),i%5]))
+        abundance_map = abundances[order[i]].T.reshape(shape[0],shape[1],-1)
+        cax = ax[i+1].imshow(abundance_map, interpolation='none', norm=None, cmap='gray', vmin=0)
+        cbar = plt.colorbar(cax, ax=ax[i+1])
+        ticks = np.linspace(np.min(0),np.max(abundance_map), num=5)
+        cbar.set_ticks(ticks)
+        cbar.ax.minorticks_off()
+        cbar.ax.yaxis.set_major_formatter(FuncFormatter(scientific_notation))
+        ax[i+1].set_title(f"Spectrum {i} abundances")
+    plt.tight_layout()
+    plt.savefig(f"{save_path}Endmembers", bbox_inches='tight', dpi=300)
+    plt.close(fig)
+
     
 
 def get_error(data1, data2, ax):
-    data1 = Normalize(data1, min=0.01, max=1.0)
-    data2 = Normalize(data2, min=0.01, max=1.0)
+    data1 = Normalize(data1, min=0.001, max=1.0)
+    data2 = Normalize(data2, min=0.001, max=1.0)
     error_percent = np.mean(100 * np.abs((data1 - data2) / data1), axis=2)
     min_val = np.min(error_percent[error_percent > 0])  # Smallest non-zero value
     max_val = np.max(error_percent)
@@ -101,8 +157,8 @@ def get_error(data1, data2, ax):
     ax.axis('off')
 
 def get_spectral_error(data1, data2): #Likely getting issues due to oxygen absorption
-     data1 = Normalize(data1, min=0.01, max=1.0)
-     data2 = Normalize(data2, min=0.01, max=1.0)
+     data1 = Normalize(data1, min=0.001, max=1.0)
+     data2 = Normalize(data2, min=0.001, max=1.0)
      error = np.abs((data1 - data2) / data1)
      mean_error = np.mean((100*error), axis=(0,1))
      return mean_error
@@ -111,3 +167,4 @@ def Normalize(data, min=0.0, max=1.0):
     data_min, data_max = data.min(), data.max()
     data = (data-data_min)*(max-min)/(data_max-data_min)+min
     return data
+

@@ -43,9 +43,12 @@ def load_l1b_shape(string: Path): #TODO doc
         shape = rootgrp.groups["products"].variables["Lt"][:].shape #lines, samples, bands
         return shape
 
-def load_l1b_cube(string: Path): #TODO doc
+def load_l1b_cube(string: Path, coords=[0,0,0,0], bands=[4,116]): #TODO doc
     assert string.name.endswith('l1b.nc'), "File is not l1b processed"
     with nc.Dataset(string, "r", format="NETCDF4") as f:
         group = f.groups["products"]
-        data = np.array(group.variables["Lt"][:,:,4:116], dtype=np.float64)
+        if coords != [0,0,0,0]:
+            data = np.array(group.variables["Lt"][coords[0]:coords[1],coords[2]:coords[3],bands[0]:bands[1]], dtype=np.float64)
+        else:
+            data = np.array(group.variables["Lt"][:,:,bands[0]:bands[1]], dtype=np.float64)
         return data
