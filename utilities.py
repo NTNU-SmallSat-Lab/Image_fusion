@@ -5,16 +5,9 @@ from pathlib import Path
 from PIL import Image
 from scipy.ndimage import gaussian_filter
 import pandas as pd
-
-def normalize(image):
-        """
-        Normalize an image array to the range [0, 255].
-        """
-        img_min = np.max([np.min(image), 1e-15])
-        img_max = np.max(image)
-        # Avoid division by zero if all pixels are the same
-        output = image/(img_max-img_min)
-        return output
+import subprocess
+import csv
+from datetime import datetime
 
 def Cost(Data1, Data2, band1=0, band2=0):
         """calculates the squared frobenius norm between two np.arrays
@@ -107,3 +100,77 @@ def map_mask_to_bands(mask: np.array, bands: int):
         if band != -1:
             output[:,band] = output[:,band] + mask[i,:].T
     return output
+
+def get_git_version():
+    try:
+        # Get the current commit hash
+        commit_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode('utf-8')
+        
+        # Check if there are uncommitted changes
+        status = subprocess.check_output(["git", "status", "--porcelain"]).strip().decode('utf-8')
+        clean_status = 'Clean' if not status else 'Uncommitted changes'
+        
+        return commit_hash, clean_status
+    except subprocess.CalledProcessError:
+        return 'Not a Git repository', 'Unknown'
+    
+def log_results_to_csv(filename, variable_values, result_values):
+    # Get the current timestamp
+    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Get the Git version information
+    commit_hash, git_status = get_git_version()
+    
+    # Data to log (you can modify this based on your needs)
+    data_to_log = {
+        'time': current_time,
+        'git_version': commit_hash,
+        'git_status': git_status,
+        **variable_values,  # Unpack your variable values into the dict
+        **result_values     # Unpack your result values into the dict
+    }
+    
+    # Writing to a CSV file, append mode ('a'), with headers only on the first run
+    file_exists = False
+    try:
+        with open(filename, mode='r'):
+            file_exists = True
+    except FileNotFoundError:
+        file_exists = False
+    
+    with open(filename, mode='a', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=data_to_log.keys())
+        
+        # Write the header only once (if the file does not exist yet)
+        if not file_exists:
+            writer.writeheader()
+        
+        # Write the data row
+        writer.writerow(data_to_log)
+
+def mean_spectral_angle(data1, data2): #returns RMSE spectral angle
+    assert data1.shape == data2.shape, "Datacube dimensions not same"
+    flat_shape = (-1, data1.shape[-1])  # (num_pixels, num_bands)
+    datacube1_flat = data1.reshape(flat_shape)
+    datacube2_flat = data2.reshape(flat_shape)
+    dot_product = np.sum(datacube1_flat * datacube2_flat, axis=1)
+    norm1 = np.linalg.norm(datacube1_flat, axis=1)
+    norm2 = np.linalg.norm(datacube2_flat, axis=1)
+    epsilon = 1e-9
+    norm1 = np.maximum(norm1, epsilon)
+    norm2 = np.maximum(norm2, epsilon)
+    cosine_angle = dot_product / (norm1 * norm2)
+    cosine_angle = np.clip(cosine_angle, -1.0, 1.0)
+    spectral_angle = np.arccos(cosine_angle)
+    return np.mean(spectral_angle)
+
+def calculate_psnr(original, reconstructed, max_pixel_value=1.0):
+    if original.shape != reconstructed.shape:
+        raise ValueError("Input images must have the same dimensions.")
+    mse = np.mean((original - reconstructed) ** 2)
+    
+    if mse == 0:
+        return float('inf')  # Infinite PSNR if no difference between images
+
+    psnr = 10 * np.log10((max_pixel_value ** 2) / mse)
+    return psnr

@@ -3,6 +3,7 @@ from VCA_master.VCA import vca
 from utilities import Cost
 import loader as ld
 from scipy.optimize import minimize
+from Plotting import Normalize
 
 def CNMF(HSI_data: np.array, 
          MSI_data: np.array, 
@@ -112,13 +113,17 @@ def CNMF(HSI_data: np.array,
             if count_i == i_in:
                 done_i = True
         count_o += 1
-        if count_o == i_out:
-            done_o = True
+        if count_o >= i_out :
+            if abs(np.mean(np.sum(h, axis=0))-1) < 0.01:
+                done_o = True
+            else:
+                print("Abundances outside constraints, extending run.")
+
         """print(f"Mean h per pixel sum: {np.mean(np.sum(h, axis=0))}")
         print(f"Max h per pixel sum: {np.max(np.sum(h, axis=0))}")
         print(f"Min h per pixel sum: {np.min(np.sum(h, axis=0))}")"""
     out_flat = np.matmul(w[:-1,:],h)
-    out = out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands)
+    out = Normalize(out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands), min=1E-6, max=1.0)
     return out, w[:-1,:], h
 
 def CheckMat(data: np.array, name: str, zero = False):

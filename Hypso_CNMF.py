@@ -4,13 +4,14 @@ import utilities as util
 import os
 from CNMF import CNMF, Get_VCA
 import loader as ld
+import time
 
 
 data_string, name = util.Get_path()
-
-endmember_count = 10
-delta = 0.2
-tol = 0.00001
+start_time = time.time()
+endmember_count = 40
+delta = 0.15
+tol = 0.00005
 
 loops = (300, 5)
 """x_start = int(input("x_start: "))
@@ -25,11 +26,11 @@ VCA_init = Get_VCA(data_string, endmember_count)
 
 full_arr = Normalize(ld.load_l1b_cube(data_string),min=0.01,max=1.0)
 
-arr = full_arr[x_start:x_end,y_start:y_end,:]
+arr = Normalize(full_arr[x_start:x_end,y_start:y_end,:], min=1E-6, max=1.0)
 
 size = (x_end-x_start,y_end-y_start)
 downsample_factor = 4
-sigma = 2
+sigma = 4
 
 lowres_downsampled = util.Downsample(arr, sigma=sigma, downsampling_factor=downsample_factor) #Generate downsampled HSI
 upsized_image = np.repeat(np.repeat(lowres_downsampled, downsample_factor, axis=0), downsample_factor, axis=1)
@@ -66,5 +67,13 @@ if endmember_count > 10:
         save_endmembers_many(endmembers, abundances, size, save_path)
 else:
         save_endmembers_few(endmembers, abundances, size, save_path)
+
+mean_spatial_error = np.mean(np.abs(arr - Upscaled_datacube))
+spectral_error = util.mean_spectral_angle(arr, Upscaled_datacube)
+PSNR = util.calculate_psnr(arr, Upscaled_datacube)
+Result_values = {"Absolute mean error":mean_spatial_error,"Spectral_angle_difference":spectral_error,"Peak SNR":PSNR}
+end_time = time.time()
+Variable_values = {"Input":name,"Endmembers":endmember_count,"delta":delta,"loops":loops,"tolerance":tol,"Sigma":sigma,"Downsampling":downsample_factor,"Coordinates" : pix_coords, "Runtime":(end_time-start_time)}
+util.log_results_to_csv("Runs.csv", variable_values=Variable_values, result_values=Result_values)
 
 print(f"Saved in {save_path}")

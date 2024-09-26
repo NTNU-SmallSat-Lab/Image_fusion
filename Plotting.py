@@ -115,7 +115,7 @@ def save_endmembers_few(endmembers, abundances, shape, save_path):
             order.append(selected)
 
     def scientific_notation(x, pos):
-        return f'{x:.2e}'
+        return f'{x:.2f}'
     
     ax = []
     ax.append(fig.add_subplot(gs[0,:]))
@@ -128,9 +128,11 @@ def save_endmembers_few(endmembers, abundances, shape, save_path):
     for i in range(count):
         ax.append(fig.add_subplot(gs[1+int(i/5),i%5]))
         abundance_map = abundances[order[i]].T.reshape(shape[0],shape[1],-1)
-        cax = ax[i+1].imshow(abundance_map, interpolation='none', norm=None, cmap='gray', vmin=0)
+        cax = ax[i+1].imshow(abundance_map, interpolation='none', norm=LogNorm(), cmap='gray')
         cbar = plt.colorbar(cax, ax=ax[i+1])
-        ticks = np.linspace(np.min(0),np.max(abundance_map), num=5)
+        min_val = np.min(abundance_map)  # Smallest non-zero value
+        max_val = np.max(abundance_map)
+        ticks = np.logspace(np.log10(min_val), np.log10(max_val), num=5)
         cbar.set_ticks(ticks)
         cbar.ax.minorticks_off()
         cbar.ax.yaxis.set_major_formatter(FuncFormatter(scientific_notation))
@@ -142,12 +144,10 @@ def save_endmembers_few(endmembers, abundances, shape, save_path):
     
 
 def get_error(data1, data2, ax):
-    data1 = Normalize(data1, min=0.001, max=1.0)
-    data2 = Normalize(data2, min=0.001, max=1.0)
-    error_percent = np.mean(100 * np.abs((data1 - data2) / data1), axis=2)
-    min_val = np.min(error_percent[error_percent > 0])  # Smallest non-zero value
+    error_percent = np.mean(np.abs(data1 - data2), axis=2)
+    min_val = np.min(error_percent)  # Smallest non-zero value
     max_val = np.max(error_percent)
-    cax = ax.imshow(error_percent, interpolation='none', cmap='gray', norm=LogNorm(vmin=min_val,vmax=max_val))
+    cax = ax.imshow(error_percent, interpolation='none', cmap='gray', norm=LogNorm())
     cbar = plt.colorbar(cax, ax=ax)
     ticks = np.logspace(np.log10(min_val), np.log10(max_val), num=5)  # Logarithmic spacing of ticks
     cbar.set_ticks(ticks)

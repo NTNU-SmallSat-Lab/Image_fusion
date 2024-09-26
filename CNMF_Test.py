@@ -1,116 +1,191 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.ndimage import gaussian_filter
 from VCA_master.VCA import vca
+from utilities import Cost
 import loader as ld
-from saver import save_HSI_as_RGB
-import utilities as util
 
-data_string = ".\\data\\APEX_OSD_Package_1.0\\APEX_osd_V1_calibr_cube"
 
-precision = np.float32
+def CNMF(HSI_data: np.array, 
+         MSI_data: np.array, 
+         spatial_transform: np.array, 
+         spectral_response: np.array, 
+         VCA_init: np.array,
+         delta=0.9,
+         endmembers=40, 
+         loops=(10,5),
+         tol=0.00005) -> list[np.array, np.array, np.array]:
+    """Performs coupled Nonnegative matrix factorisation to upscale HSI data using spatial data from MSI
 
-rgb = {
-    "R": 44,
-    "G": 18,
-    "B": 5
-}
+    Args:
+        HSI_data (np.array): low spatial/high spectral resolution datacube shape=(x_h, y_h, b_h)
+        MSI_data (np.array): high spatial/low spectral resolution datacube shape=(x_m, y_m, b_m)
+        spatial_transform (np.array): flattened Spatial transform from HSI to MSI shape=(x_m*y_m,x_h*y_h)
+        spectral_response (np.array): spectral transform from HSI to MSI shape=(b_m, b_h)
+        VCA_init (np.array): Endmember matrix initialization shape=(b_h, endmembers)
+        endmembers (int, optional): number of endmembers. Defaults to 40.
+        loops (tuple, optional): inner and outer loops. Defaults to (200,5).
+        tol (float, optional): inner loop cost tolerance. Defaults to 0.00005.
 
-arr = ld.load_envi(precision=precision, path=data_string, x_start=300, x_end=400, y_start=300, y_end=400)
-arr = util.normalize(arr)
-size = arr.shape
-arr_flattened = arr.reshape(size[2],size[0]*size[1])
+    Returns:
+        list[np.array, np.array, np.array]: upscaled datacube, endmember spectra, abundances
+    """
 
-save_HSI_as_RGB(arr, name="Original.png", rgb=rgb)
+    precision = np.float64
+    h_bands, m_bands = HSI_data.shape[2], MSI_data.shape[2]
 
-rgb_representation = arr[:,:,[rgb["R"],rgb["G"],rgb["B"]]]
-rgb_flattened = rgb_representation.reshape(3,size[0]*size[1])
+    HSI_data = np.clip(HSI_data,1E-15,np.max(HSI_data)) #Should this be necessary?
+    MSI_data = np.clip(MSI_data,1E-15,np.max(MSI_data)) #Should this be necessary?
+    CheckMat(HSI_data, "HSI", zero=True)
+    CheckMat(MSI_data, "MSI", zero=True)
 
-sigma = 1
-downsampling_factor = 2
-assert (size[0]%downsampling_factor == 0) and (size[1]%downsampling_factor == 0), "Resolution must be whole multiple of downsample factor"
-downscaled_size = (int(size[0]/downsampling_factor), int(size[1]/downsampling_factor), size[2])
+    #Flatten arrays, add sum-to-one requirement
+    h_flat, m_flat = np.ones(shape=(HSI_data.shape[0]*HSI_data.shape[1],h_bands+1)).T, np.ones(shape=(MSI_data.shape[0]*MSI_data.shape[1],m_bands+1)).T
+    h_flat[:-1,:], m_flat[:-1,:] = delta*HSI_data.reshape(HSI_data.shape[0]*HSI_data.shape[1],h_bands).T, delta*MSI_data.reshape(-1,m_bands).T
 
-blurred = gaussian_filter(arr, sigma=(sigma, sigma, 0), mode='reflect').astype(precision)
-lowres_downsampled = np.zeros(shape=downscaled_size)
-save_HSI_as_RGB(blurred, name="Downsampled.png", rgb=rgb)
-lowres_downsampled[:,:,:] = blurred[::downsampling_factor,::downsampling_factor,:]
-lowres_downsampled_flattened = lowres_downsampled.reshape(downscaled_size[2],downscaled_size[1]*downscaled_size[0])
-save_HSI_as_RGB(lowres_downsampled, name="Downscaled.png", rgb=rgb)
-endmember_count = 40
-bands = lowres_downsampled_flattened.shape[0]
-pixels_h = lowres_downsampled_flattened.shape[1]
-pixels_m = rgb_flattened.shape[1]
+    w = np.ones(shape=(h_bands+1,endmembers),dtype=precision)
 
-spatial_transform_matrix = np.zeros(shape=(pixels_m,pixels_h),dtype=precision)
-for i in range(downscaled_size[0]):
-    spatial_transform_matrix[downsampling_factor*i:downsampling_factor*(i+1)-1,i] = 1 #combine pixels 2-to-1 NEEDS UPDATING FOR DIFFERENT DOWNSAMPLING VALUES
-spectral_spread = 1
-spectral_response_matrix = np.zeros(shape=(3,bands), dtype=precision)
-spectral_response_matrix[0,rgb["R"]-spectral_spread:rgb["R"]+spectral_spread+1] = 1
-spectral_response_matrix[1,rgb["G"]-spectral_spread:rgb["G"]+spectral_spread+1] = 1
-spectral_response_matrix[2,rgb["B"]-spectral_spread:rgb["B"]+spectral_spread+1] = 1 #sum up a few bands around each RGB component since no calibration data
-spectral_response_matrix = spectral_response_matrix/spectral_response_matrix.sum(axis=1, keepdims=True)
+    h = np.ones(shape=(endmembers,m_flat.shape[1]),dtype=precision)/endmembers
+    
+    w_m = np.ones(shape=(spectral_response.shape[0]+1,w.shape[1]))
+    w_m[:-1,:] = delta*np.matmul(spectral_response, w[:-1,:])
+    h_h = np.matmul(h,spatial_transform)
 
-w = np.zeros(shape=(bands,endmember_count),dtype=precision)
-h = np.ones(shape=(endmember_count,pixels_m),dtype=precision)/endmember_count #endmember and abundance matrices for fused data
-
-w_m = np.zeros(shape=(3,endmember_count)) #reduced band endmember spectrum matrix
-h_h = np.ones(shape=(endmember_count,pixels_h),dtype=precision)/endmember_count #reduced resolution abundance matrix
-
-Ae, _, _ = vca(lowres_downsampled_flattened, endmember_count, verbose = True) #CHECK VCA FUNCTION/WRITE OWN
-#STEP 1
-w[:,:] = Ae[:,:]
-h_h = h_h*np.matmul(w.transpose(),lowres_downsampled_flattened)/np.matmul(w.transpose(),np.matmul(w,h_h))
-done_i, done_o, count_i, count_o, = False, False, 0, 0
-i_in, i_out = 50, 80
-last_i, last_o =  1E-15, 1E-15
-tol_i, tol_o = 0.000000002, 0
-assert w.shape == (bands,endmember_count), "W has dimensions {w.shape}, should have ({bands},{endmember_count})"
-assert w_m.shape == (3,endmember_count), "W_m has dimensions {w_m.shape}, should have (3,{endmember_count})"
-assert h.shape == (endmember_count,pixels_m), "H has dimensions {h.shape}, should have ({endmember_count},{original_resolution})"
-assert h_h.shape == (endmember_count,pixels_h), "H_h has dimensions {h_h.shape}, should have ({endmember_count},{downsampled_resolution})"
-while done_o != True:
-    #STEP 2
-    w_m = np.matmul(spectral_response_matrix,w)
-    h = h*np.matmul(w_m.transpose(),rgb_flattened)/np.matmul(w_m.transpose(),np.matmul(w_m,h))
-    last_i = 1E-12
-    count_i = 0
-    done_i = False
+    #STEP 1a
+    w[:-1,:] = delta*VCA_init
+    CheckMat(np.matmul(w,h_h),"w*h_h", zero=True)
+    h_h = Divergence_H(h_flat, w, h_h)
+    done_i, done_o, count_i, count_o, = False, False, 0, 0
+    i_in, i_out = loops[0], loops[1]
+    last_i =  1E-15
     while done_i != True:
-        w_m = w_m*np.matmul(rgb_flattened,h.transpose())/np.matmul(w_m,np.matmul(h,h.transpose()))
-        h = h*np.matmul(w_m.transpose(),rgb_flattened)/np.matmul(w_m.transpose(),np.matmul(w_m,h))
-        cost = util.Cost(rgb_flattened, np.matmul(w_m,h))
+        #STEP 1b
+        w[-1,:] = np.ones_like(w[-1,:])
+        h_h = Divergence_H(h_flat, w, h_h)
+        w = Divergence_W(h_flat, w, h_h)
+        w = w*np.matmul(h_flat,h_h.transpose())/np.matmul(w,np.matmul(h_h,h_h.transpose()))
+        cost = Cost(h_flat[:-1,:], np.matmul(w[:-1,:],h_h))
         count_i += 1
-        if (last_i-cost)/last_i<tol_i:
+        if abs((last_i-cost)/last_i) < tol:
             done_i = True
         else:
             last_i = cost
         if count_i == i_in:
-            print("Counted out")
             done_i = True
-    #STEP 3
-    done_i = False
-    count_i = 0
-    last_i = 1E-12
-    h_h = np.ones(shape=(endmember_count,pixels_h),dtype=precision)/endmember_count
-    while done_i != True:
-        w = w*np.matmul(lowres_downsampled_flattened,h_h.transpose())/np.matmul(w,np.matmul(h_h,h_h.transpose()))
-        h_h = h_h*np.matmul(w.transpose(),lowres_downsampled_flattened)/np.matmul(w.transpose(),np.matmul(w,h_h))
-        cost = util.Cost(lowres_downsampled_flattened, np.matmul(w,h_h))
-        count_i += 1
-        if (last_i-cost)/last_i<tol_i:
-            done_i = True
-        else:
-            last_i = cost
-        if count_i == i_in:
-            print("Counted out")
-            done_i = True
-    count_o += 1
-    if count_o == i_out:
-        done_o = True
-result = np.matmul(w,h).reshape(size[0],size[1],size[2])
-#error = np.abs(result-arr_flattened)
+    while done_o != True:
+        print(f"Run {count_o}")
+        #STEP 2a
+        w_m[:-1,:] = np.matmul(spectral_response, w[:-1,:])
+        w_m[-1,:] = np.ones_like(w_m[-1,:])
+        h = Divergence_H(m_flat, w_m, h)
+        done_i = False
+        count_i = 0
+        last_i = 1E-15
+        while done_i != True:
+            #STEP 2b
+            w_m = Divergence_W(m_flat, w_m, h)
+            h = Divergence_H(m_flat, w_m, h)
+            cost = Cost(m_flat[:-1,:], np.matmul(w_m[:-1,:],h))
+            count_i += 1
+            if abs((last_i-cost)/last_i) < tol:
+                done_i = True
+            else:
+                last_i = cost
+            if count_i == i_in:
+                done_i = True
+        done_i = False
+        count_i = 0
+        last_i = 1E-15
+        #Step 3a
+        w[-1,:] = np.ones_like(w[-1,:])
+        h_h = np.matmul(h,spatial_transform)
+        w = Divergence_W(h_flat, w, h_h)
+        while done_i != True:
+            #STEP 3b
+            w[-1,:] = np.ones_like(w[-1,:]) 
+            h_h = Divergence_H(h_flat, w, h_h)
+            w = Divergence_W(h_flat, w, h_h)
+            cost = Cost(h_flat, np.matmul(w,h_h))
+            count_i += 1
+            if abs((last_i-cost)/last_i) < tol:
+                done_i = True
+            else:
+                last_i = cost
+            if count_i == i_in:
+                done_i = True
+        count_o += 1
+        if count_o >= i_out :
+            if abs(np.mean(np.sum(h, axis=0))-1) < 0.01:
+                done_o = True
+            else:
+                print("Abundances not outside constraints, extending run.")
 
-#save_HSI_as_RGB(error,"Error.png", rgb=rgb)
-save_HSI_as_RGB(result, "Output.png", rgb=rgb)
+    out_flat = np.matmul(w[:-1,:],h)
+    out = out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands)
+    return out, w[:-1,:], h
+
+def CheckMat(data: np.array, name: str, zero = False):
+    """Simple check to ensure matrix well defined
+
+    Args:
+        data (np.array): Matrix to be checked
+        name (string): String to identify matrix in output
+        zero (bool, optional): Whether to check for zeros. Defaults to False.
+    """
+    assert not np.any(np.isinf(data)), f"Matrix {name} has infinite values"
+    assert not np.any(np.isnan(data)), f"Matrix {name} has NaN values"
+    if zero:
+        assert not np.any(data == 0), f"Matrix {name} has Zero values"
+
+def PixelSumToOne(data: np.array) -> np.array:
+    """Modify matrix so sum of each column vector is 1
+
+    Args:
+        data (np.array): matrix shape.len=2
+
+    Returns:
+        np.array: matrix with vectors summed to one
+    """
+    assert len(data.shape) == 2, "Array incorrectly dimensioned"
+    pixel_sums = np.sum(data, axis=0)
+    new_data = data/pixel_sums
+    return new_data
+
+def Get_VCA(string: str, endmembers: int, coords=[0,0,0,0], bands=[0,0]):
+    """Retrieve endmembers of an l1b datacube using vertex component analysis
+
+    Args:
+        string (str): path to l1b cube
+        endmembers (int): number of endmembers
+        coords (list, optional): Area to retrieve endmembers from (x_start, x_end, y_start, y_end). Defaults to entire datacube.
+
+    Returns:
+        np.array: returns spectral signature matrix shape=(bands,endmembers)
+    """
+    data = ld.load_l1b_cube(string)
+    if coords != [0,0,0,0]:
+        data=data[coords[0]:coords[1],coords[2]:coords[3],:]
+    if bands != [0,0]:
+        data = data[:,:,bands[0]:bands[1]]
+    h_flat = data.reshape(data.shape[0]*data.shape[1],data.shape[2]).T
+    Ae, _, _ = vca(h_flat, endmembers, verbose=True)
+    return Ae
+
+def Euclidean_H(X, W, H):
+    return H*np.matmul(W.transpose(),X)/np.matmul(W.transpose(),np.matmul(W,H))
+
+def Euclidean_W(X, W, H):
+    return W*np.matmul(X,H.transpose(),)/np.matmul(W,np.matmul(H,H.transpose()))
+
+def Divergence_H(X, W, H):
+     # Compute the product WH
+    WH = np.dot(W, H)
+    numerator = np.dot(W.T, X / WH)
+    denominator = np.sum(W.T, axis=1, keepdims=True)
+    H = H * (numerator / denominator)
+    return H
+
+def Divergence_W(X, W, H):
+    WH = np.dot(W, H)
+    numerator = np.dot(X / WH, H.T)
+    denominator = np.sum(H, axis=1, keepdims=True).T    
+    W = W * (numerator / denominator)    
+    return W
