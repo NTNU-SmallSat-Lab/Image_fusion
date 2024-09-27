@@ -19,12 +19,12 @@ x_end = int(input("x_end: "))
 y_start = int(input("y_start"))
 y_end = int(input("y_end"))"""
 
-x_start, x_end, y_start, y_end = 0, 200, 0, 200
-pix_coords = [x_start,x_end,y_start,y_end] #only needed if taking VCA of section, not entire image
+x_start, x_end, y_start, y_end = 100, 160, 100, 160
+pix_coords = [x_start,x_end,y_start,y_end]
 
 VCA_init = Get_VCA(data_string, endmember_count)
 
-full_arr = Normalize(ld.load_l1b_cube(data_string),min=0.01,max=1.0)
+full_arr = ld.load_l1b_cube(data_string)
 
 arr = Normalize(full_arr[x_start:x_end,y_start:y_end,:], min=1E-6, max=1.0)
 

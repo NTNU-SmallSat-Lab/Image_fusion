@@ -8,18 +8,17 @@ from PIL import Image
 
 def save_spec_error(data1, data2, ax):
     levels = np.loadtxt("RGB_mask.txt")*100
-    spec_error = get_spectral_error(data1, data2)
+    spec_error = util.calculate_psnr(data1,data2,axis=(0,1))
     ax2 = ax.twinx()
     ax.plot(spec_error, linestyle='-', label='Spectral error sum', color='orange')
     start_nm, end_nm = util.band_to_wavelength(4)[0].astype(int), util.band_to_wavelength(116)[1].astype(int)
-    ax2.plot(np.linspace(4,116,end_nm-start_nm),levels[start_nm:end_nm, 0], linestyle='dotted', color='red', label='Red Channel')
-    ax2.plot(np.linspace(4,116,end_nm-start_nm),levels[start_nm:end_nm, 1], linestyle='dotted', color='green', label='Green Channel')
-    ax2.plot(np.linspace(4,116,end_nm-start_nm),levels[start_nm:end_nm, 2], linestyle='dotted', color='blue', label='Blue Channel')
+    ax2.plot(np.linspace(4,116,end_nm-start_nm),levels[start_nm:end_nm, 0], linestyle='dotted', color='red')
+    ax2.plot(np.linspace(4,116,end_nm-start_nm),levels[start_nm:end_nm, 1], linestyle='dotted', color='green')
+    ax2.plot(np.linspace(4,116,end_nm-start_nm),levels[start_nm:end_nm, 2], linestyle='dotted', color='blue')
     ax.set_xlabel('bands')
-    ax.set_ylabel('Error [%]')
+    ax.set_ylabel('PNSR')
     ax2.set_ylabel('Quantum efficiency [%]')
     plt.grid(True)
-    plt.legend(loc='upper left')
 
 def save_endmembers_many(endmembers, abundances, shape, path): #Make this better
     endmember_count = endmembers.shape[1]
@@ -34,10 +33,7 @@ def save_endmembers_many(endmembers, abundances, shape, path): #Make this better
                 selected = j
         if selected != -1:
             order.append(selected)
-    if int(endmember_count/5) == 0:
-        array = np.zeros(shape=(2*shape[0],endmember_count*shape[1],4))
-    else:
-        array = np.zeros(shape=(2*int(endmember_count/5)*shape[0],5*shape[1],4))
+    array = np.zeros(shape=(2*int(endmember_count/5)*shape[0],5*shape[1],4))
     abundance_array = np.zeros_like(array)
     for i in range(endmember_count):
         plt.figure(figsize=(shape[0]/100,shape[1]/100), dpi=100, facecolor='white', layout='compressed')
@@ -128,10 +124,10 @@ def save_endmembers_few(endmembers, abundances, shape, save_path):
     for i in range(count):
         ax.append(fig.add_subplot(gs[1+int(i/5),i%5]))
         abundance_map = abundances[order[i]].T.reshape(shape[0],shape[1],-1)
-        cax = ax[i+1].imshow(abundance_map, interpolation='none', norm=LogNorm(), cmap='gray')
-        cbar = plt.colorbar(cax, ax=ax[i+1])
-        min_val = np.min(abundance_map)  # Smallest non-zero value
+        min_val = np.min(abundance_map[abundance_map > 0.01])  # Smallest non-zero value
         max_val = np.max(abundance_map)
+        cax = ax[i+1].imshow(abundance_map, interpolation='none', norm=LogNorm(vmin=0.01, vmax=1), cmap='viridis')
+        cbar = plt.colorbar(cax, ax=ax[i+1])
         ticks = np.logspace(np.log10(min_val), np.log10(max_val), num=5)
         cbar.set_ticks(ticks)
         cbar.ax.minorticks_off()
@@ -144,24 +140,17 @@ def save_endmembers_few(endmembers, abundances, shape, save_path):
     
 
 def get_error(data1, data2, ax):
-    error_percent = np.mean(np.abs(data1 - data2), axis=2)
-    min_val = np.min(error_percent)  # Smallest non-zero value
-    max_val = np.max(error_percent)
-    cax = ax.imshow(error_percent, interpolation='none', cmap='gray', norm=LogNorm())
+    error = util.mean_spectral_angle(data1, data2, map=True)
+    min_val = np.min(error)  # Smallest non-zero value
+    max_val = np.max(error)
+    cax = ax.imshow(error, interpolation='none', cmap='viridis', norm=LogNorm())
     cbar = plt.colorbar(cax, ax=ax)
     ticks = np.logspace(np.log10(min_val), np.log10(max_val), num=5)  # Logarithmic spacing of ticks
     cbar.set_ticks(ticks)
     cbar.ax.minorticks_off()
     cbar.set_ticklabels([f'{tick:.2f}' for tick in ticks])
-    ax.set_title("Error [%]")
+    ax.set_title("Spectral angle difference")
     ax.axis('off')
-
-def get_spectral_error(data1, data2): #Likely getting issues due to oxygen absorption
-     data1 = Normalize(data1, min=0.001, max=1.0)
-     data2 = Normalize(data2, min=0.001, max=1.0)
-     error = np.abs((data1 - data2) / data1)
-     mean_error = np.mean((100*error), axis=(0,1))
-     return mean_error
 
 def Normalize(data, min=0.0, max=1.0):
     data_min, data_max = data.min(), data.max()

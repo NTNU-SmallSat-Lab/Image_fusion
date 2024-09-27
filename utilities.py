@@ -148,29 +148,41 @@ def log_results_to_csv(filename, variable_values, result_values):
         # Write the data row
         writer.writerow(data_to_log)
 
-def mean_spectral_angle(data1, data2): #returns RMSE spectral angle
+def mean_spectral_angle(data1, data2, map=False): #returns RMSE spectral angle in radians
     assert data1.shape == data2.shape, "Datacube dimensions not same"
-    flat_shape = (-1, data1.shape[-1])  # (num_pixels, num_bands)
-    datacube1_flat = data1.reshape(flat_shape)
-    datacube2_flat = data2.reshape(flat_shape)
-    dot_product = np.sum(datacube1_flat * datacube2_flat, axis=1)
-    norm1 = np.linalg.norm(datacube1_flat, axis=1)
-    norm2 = np.linalg.norm(datacube2_flat, axis=1)
+    if not map: #want single value for entire datacube
+        flat_shape = (-1, data1.shape[-1])  # (num_pixels, num_bands)
+        data1 = data1.reshape(flat_shape)
+        data2 = data2.reshape(flat_shape)
+        ax = 1
+    else: #want spectral angle per pixel (map)
+        ax = 2
+    dot_product = np.sum(data1 * data2, axis=ax)
+    norm1 = np.linalg.norm(data1, axis=ax)
+    norm2 = np.linalg.norm(data2, axis=ax)
     epsilon = 1e-9
     norm1 = np.maximum(norm1, epsilon)
     norm2 = np.maximum(norm2, epsilon)
     cosine_angle = dot_product / (norm1 * norm2)
     cosine_angle = np.clip(cosine_angle, -1.0, 1.0)
     spectral_angle = np.arccos(cosine_angle)
-    return np.mean(spectral_angle)
+    if not map:
+        return np.mean(spectral_angle)
+    else:
+        return spectral_angle
 
-def calculate_psnr(original, reconstructed, max_pixel_value=1.0):
+def calculate_psnr(original, reconstructed, max_pixel_value=1.0, axis=None):
     if original.shape != reconstructed.shape:
         raise ValueError("Input images must have the same dimensions.")
-    mse = np.mean((original - reconstructed) ** 2)
+    mse = np.mean((original - reconstructed) ** 2, axis=axis)
     
-    if mse == 0:
-        return float('inf')  # Infinite PSNR if no difference between images
+    if np.any(mse == 0):
+        if axis is None:
+            return float('inf')  # scalar case
+        else:
+            psnr = np.full_like(mse, float('inf'))  # fill with inf in case of zero MSE
+            psnr[mse != 0] = 10 * np.log10((max_pixel_value ** 2) / mse[mse != 0])
+            return psnr
 
     psnr = 10 * np.log10((max_pixel_value ** 2) / mse)
     return psnr

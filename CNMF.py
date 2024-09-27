@@ -2,7 +2,6 @@ import numpy as np
 from VCA_master.VCA import vca
 from utilities import Cost
 import loader as ld
-from scipy.optimize import minimize
 from Plotting import Normalize
 
 def CNMF(HSI_data: np.array, 
@@ -32,12 +31,7 @@ def CNMF(HSI_data: np.array,
 
     precision = np.float64
     h_bands, m_bands = HSI_data.shape[2], MSI_data.shape[2]
-
-    HSI_data = np.clip(HSI_data,1E-15,np.max(HSI_data)) #Should this be necessary?
-    MSI_data = np.clip(MSI_data,1E-15,np.max(MSI_data)) #Should this be necessary?
-    CheckMat(HSI_data, "HSI", zero=True)
-    CheckMat(MSI_data, "MSI", zero=True)
-
+    
     #Flatten arrays, add sum-to-one requirement
     h_flat, m_flat = np.ones(shape=(HSI_data.shape[0]*HSI_data.shape[1],h_bands+1)).T, np.ones(shape=(MSI_data.shape[0]*MSI_data.shape[1],m_bands+1)).T
     h_flat[:-1,:], m_flat[:-1,:] = delta*HSI_data.reshape(HSI_data.shape[0]*HSI_data.shape[1],h_bands).T, delta*MSI_data.reshape(-1,m_bands).T
