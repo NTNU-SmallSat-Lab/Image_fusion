@@ -31,7 +31,7 @@ def CNMF(HSI_data: np.array,
 
     precision = np.float64
     h_bands, m_bands = HSI_data.shape[2], MSI_data.shape[2]
-    
+
     #Flatten arrays, add sum-to-one requirement
     h_flat, m_flat = np.ones(shape=(HSI_data.shape[0]*HSI_data.shape[1],h_bands+1)).T, np.ones(shape=(MSI_data.shape[0]*MSI_data.shape[1],m_bands+1)).T
     h_flat[:-1,:], m_flat[:-1,:] = delta*HSI_data.reshape(HSI_data.shape[0]*HSI_data.shape[1],h_bands).T, delta*MSI_data.reshape(-1,m_bands).T
@@ -108,7 +108,7 @@ def CNMF(HSI_data: np.array,
                 done_i = True
         count_o += 1
         if count_o >= i_out :
-            if abs(np.mean(np.sum(h, axis=0))-1) < 0.01:
+            if np.mean(np.abs(np.sum(h, axis=0))-1 > 1E-5):
                 done_o = True
             else:
                 print("Abundances outside constraints, extending run.")

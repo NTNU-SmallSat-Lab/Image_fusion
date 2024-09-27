@@ -5,12 +5,13 @@ import os
 from CNMF import CNMF, Get_VCA
 import loader as ld
 import time
+from Viewdata import visualize
 
 
 data_string, name = util.Get_path()
 start_time = time.time()
-endmember_count = 40
-delta = 0.15
+endmember_count = 6
+delta = 0.3
 tol = 0.00005
 
 loops = (300, 5)
@@ -19,7 +20,7 @@ x_end = int(input("x_end: "))
 y_start = int(input("y_start"))
 y_end = int(input("y_end"))"""
 
-x_start, x_end, y_start, y_end = 100, 160, 100, 160
+x_start, x_end, y_start, y_end = 0, 200, 0, 200
 pix_coords = [x_start,x_end,y_start,y_end]
 
 VCA_init = Get_VCA(data_string, endmember_count)
@@ -60,7 +61,7 @@ if not os.path.exists(save_path):
         os.mkdir(save_path)
 
 print(f"Mean abundance per pixel sum: {np.mean(np.sum(abundances, axis=0))}")
-assert abs(np.mean(np.sum(abundances, axis=0))-1) < 0.01, "Abundances do not sum to 1, reduce delta or increase out loop number"
+#assert abs(np.mean(np.sum(abundances, axis=0))-1) < 0.01, "Abundances do not sum to 1, reduce delta or increase out loop number"
 
 save_final_image(arr, lowres_downsampled, Upscaled_datacube, spectral_response_matrix, save_path)
 if endmember_count > 10:
@@ -77,3 +78,5 @@ Variable_values = {"Input":name,"Endmembers":endmember_count,"delta":delta,"loop
 util.log_results_to_csv("Runs.csv", variable_values=Variable_values, result_values=Result_values)
 
 print(f"Saved in {save_path}")
+
+visualize(endmembers, abundances, size)

@@ -28,14 +28,14 @@ def Cost(Data1, Data2, band1=0, band2=0):
         return cost
 
 def Wavelength_to_band(wavelength):
-    wavelengths = np.asarray(pd.read_csv("Calibration_data\\spectral_bands_Hypso-1_v1.csv"))[:,0]
+    wavelengths = np.asarray(pd.read_csv("spectral_bands_Hypso-1_v1.csv"))[:,0]
     for i in range(wavelengths.shape[0]):
          if (wavelengths[i] < wavelength) and (wavelengths[i+1]>wavelength):
               return i
     return -1
 
 def band_to_wavelength(band: int):
-    wavelengths = np.asarray(pd.read_csv("Calibration_data\\spectral_bands_Hypso-1_v1.csv"))[:,0]
+    wavelengths = np.asarray(pd.read_csv("spectral_bands_Hypso-1_v1.csv"))[:,0]
     return (wavelengths[band],wavelengths[band+1])
     
 
@@ -79,9 +79,15 @@ def Gen_downsampled_spatial(downsampling_factor, size) -> np.array:
     for i in range(reduced_size[0]):
         for j in range(reduced_size[1]):
              for k in range(downsampling_factor):
-                  spat_x = (i*reduced_size[0]+j)
-                  spat_y = (i*size[0]+j)*downsampling_factor+k*downsampling_factor*reduced_size[0]
-                  spatial_transform[spat_x,spat_y:spat_y+downsampling_factor] = np.ones(shape=(1,downsampling_factor))/(downsampling_factor**2)
+                  for l in range(downsampling_factor):  # loop over downsampling in width
+                    # Calculate the low-res index (flattened 2D)
+                    spat_x = i * reduced_size[1] + j
+                    
+                    # Calculate the high-res index (flattened 2D)
+                    spat_y = (i * downsampling_factor + k) * size[1] + (j * downsampling_factor + l)
+                    
+                    # Assign the value (normalized by downsampling factor)
+                    spatial_transform[spat_x, spat_y] = 1 / (downsampling_factor**2)
             
     return spatial_transform.astype(np.float64)
 
@@ -96,7 +102,7 @@ def Gen_spectral(rgb, bands, spectral_spread) -> np.array:
 def map_mask_to_bands(mask: np.array, bands: int):
     output = np.zeros(shape=(mask.shape[1],bands))
     for i in range(mask.shape[0]):
-        band = Wavelength_to_band(i)
+        band = Wavelength_to_band(i)+4
         if band != -1:
             output[:,band] = output[:,band] + mask[i,:].T
     return output

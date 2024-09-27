@@ -3,8 +3,6 @@ import utilities as util
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from matplotlib.ticker import FuncFormatter
-from io import BytesIO
-from PIL import Image
 
 def save_spec_error(data1, data2, ax):
     levels = np.loadtxt("RGB_mask.txt")*100
@@ -20,44 +18,45 @@ def save_spec_error(data1, data2, ax):
     ax2.set_ylabel('Quantum efficiency [%]')
     plt.grid(True)
 
-def save_endmembers_many(endmembers, abundances, shape, path): #Make this better
-    endmember_count = endmembers.shape[1]
+def save_endmembers_many(endmembers, abundances, shape, save_path):
+    assert endmembers.shape[1] > 10, "Too few endmembers use save_endmembers_few()"
+    count = endmembers.shape[1]
     order = []
-    for i in range(endmember_count):
+    def scientific_notation(x, pos):
+        return f'{x:.3f}'
+    for i in range(count):
         max_abundance = 0
         selected = -1
-        for j in range(endmember_count):
+        for j in range(count):
             abundance = np.sum(abundances[j,:])
             if (abundance > max_abundance) and j not in order:
                 max_abundance = abundance
                 selected = j
         if selected != -1:
             order.append(selected)
-    array = np.zeros(shape=(2*int(endmember_count/5)*shape[0],5*shape[1],4))
-    abundance_array = np.zeros_like(array)
-    for i in range(endmember_count):
-        plt.figure(figsize=(shape[0]/100,shape[1]/100), dpi=100, facecolor='white', layout='compressed')
-        plt.plot(endmembers[:,i])
-        plt.axis('off')
-        buf = BytesIO()
-        plt.savefig(buf)
-        plt.close()
-        buf.seek(0)
-        img = Image.open(buf)
-        image_array = np.asarray(img)
-        abundance_map = np.stack([abundances[order[i],:].T.reshape(shape[0],shape[1],-1)[:,:,0]] * 4, axis=-1)
-        abundance_map[:,:,3] = np.ones_like(abundance_map[:,:,3])*255
-        array[int(i/5)*shape[0]*2:int(i/5)*shape[0]*2+shape[0],(i%5)*shape[1]:(i%5+1)*shape[1],:] = image_array
-        abundance_array[int(i/5)*shape[0]*2+shape[0]:int(i/5+1)*shape[0]*2,(i%5)*shape[1]:(i%5+1)*shape[1],:] = abundance_map
-    abundance_array[:,:,0:3]=abundance_array[:,:,0:3]*255/abundance_array[:,:,0:3].max()
-    array = array+abundance_array
-    img = Image.fromarray(array.astype(np.uint8))
-    img.save(f"{path}\\endmembers.png")
-
-def save_HSI_as_RGB(Data, name):
-    assert len(Data.shape) == 3, "Data array is not 3 dimensional"
-    util.save_RGB((Data*255).astype(np.uint8), name)
-    return
+    rows = int((count-1)/5)+1
+    fig = plt.figure(figsize=(15,6*rows))
+    gs = fig.add_gridspec(2*rows,5)
+    ax_endmembers = []
+    ax_abundances = []
+    for i in range(count):
+        row, column = 2*int(i/5), i%5
+        ax_endmembers.append(fig.add_subplot(gs[row,column]))
+        ax_abundances.append(fig.add_subplot(gs[row+1,column]))
+        abundance_map = abundances[order[i]].T.reshape(shape[0],shape[1],-1)
+        min_val = np.min(abundance_map[abundance_map > 0.01])  # Smallest non-zero value
+        max_val = np.max(abundance_map)
+        ax_endmembers[i].plot(endmembers[:,order[i]])
+        cax = ax_abundances[i].imshow(abundance_map, interpolation='none', norm=LogNorm(vmin=0.01, vmax=1), cmap='viridis')
+        cbar = plt.colorbar(cax, ax=ax_abundances[i])
+        cbar.ax.minorticks_off()
+        ticks = np.logspace(np.log10(min_val), np.log10(max_val), num=3)
+        cbar.set_ticks(ticks)
+        cbar.ax.yaxis.set_major_formatter(FuncFormatter(scientific_notation))
+        ax_abundances[i].axis('off')
+    plt.tight_layout()
+    plt.savefig(f"{save_path}Endmembers", bbox_inches='tight', dpi=300)
+    plt.close(fig)
 
 def save_final_image(Original: np.array, downscaled: np.array, Upscaled: np.array, spectral_response_matrix: np.array, save_path: str):
     fig = plt.figure(figsize=(10,15))
@@ -111,7 +110,7 @@ def save_endmembers_few(endmembers, abundances, shape, save_path):
             order.append(selected)
 
     def scientific_notation(x, pos):
-        return f'{x:.2f}'
+        return f'{x:.3f}'
     
     ax = []
     ax.append(fig.add_subplot(gs[0,:]))
@@ -148,7 +147,7 @@ def get_error(data1, data2, ax):
     ticks = np.logspace(np.log10(min_val), np.log10(max_val), num=5)  # Logarithmic spacing of ticks
     cbar.set_ticks(ticks)
     cbar.ax.minorticks_off()
-    cbar.set_ticklabels([f'{tick:.2f}' for tick in ticks])
+    cbar.set_ticklabels([f'{tick:.3f}' for tick in ticks])
     ax.set_title("Spectral angle difference")
     ax.axis('off')
 
