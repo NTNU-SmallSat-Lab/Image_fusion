@@ -166,3 +166,24 @@ def Get_VCA(string: str, endmembers: int, coords=[0,0,0,0], bands=[0,0]):
     h_flat = data.reshape(data.shape[0]*data.shape[1],data.shape[2]).T
     Ae, _, _ = vca(h_flat, endmembers, verbose=True)
     return Ae
+
+def get_PPA(data, w, h, EM):
+    h_temp = h
+    w_temp = w
+    for i in range(EM):
+        err = Cost(data, np.matmul(w,h))
+        best = -1
+        second = -1
+        best_diff = 0
+        for j in range(data.shape[1]):
+            h_temp[i] = data[:,j]
+            w_temp = w*np.matmul(data,h_temp.transpose())/np.matmul(w,np.matmul(h_temp,h_temp.transpose()))
+            diff = Cost(data, np.matmul(w_temp, h_temp))-err
+            if diff < best_diff:
+                best_diff = diff
+                second = best
+                best = j
+        if second != -1:
+            h[i] = data[:,second]
+            w = w*np.matmul(data,h.transpose())/np.matmul(w,np.matmul(h,h.transpose()))
+    return w, h

@@ -10,8 +10,8 @@ from Viewdata import visualize
 
 data_string, name = util.Get_path()
 start_time = time.time()
-endmember_count = 6
-delta = 0.4
+endmember_count = 3
+delta = 0.2
 tol = 0.00005
 
 loops = (300, 5)
@@ -20,7 +20,7 @@ x_end = int(input("x_end: "))
 y_start = int(input("y_start"))
 y_end = int(input("y_end"))"""
 
-x_start, x_end, y_start, y_end = 0, 200, 0, 100
+x_start, x_end, y_start, y_end = 100, 300, 100, 300
 pix_coords = [x_start,x_end,y_start,y_end]
 
 VCA_init = Get_VCA(data_string, endmember_count)
@@ -30,8 +30,8 @@ full_arr = ld.load_l1b_cube(data_string)
 arr = Normalize(full_arr[x_start:x_end,y_start:y_end,:], min=1E-6, max=1.0)
 
 size = (x_end-x_start,y_end-y_start)
-downsample_factor = 4
-sigma = 4
+downsample_factor = 2
+sigma = 2
 
 lowres_downsampled = util.Downsample(arr, sigma=sigma, downsampling_factor=downsample_factor) #Generate downsampled HSI
 upsized_image = np.repeat(np.repeat(lowres_downsampled, downsample_factor, axis=0), downsample_factor, axis=1)
