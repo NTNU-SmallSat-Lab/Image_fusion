@@ -14,7 +14,7 @@ def save_spec_error(data1, data2, ax):
     ax2.plot(np.linspace(4,116,end_nm-start_nm),levels[start_nm:end_nm, 1], linestyle='dotted', color='green')
     ax2.plot(np.linspace(4,116,end_nm-start_nm),levels[start_nm:end_nm, 2], linestyle='dotted', color='blue')
     ax.set_xlabel('bands')
-    ax.set_ylabel('PNSR')
+    ax.set_ylabel('PNSR [dB]')
     ax2.set_ylabel('Quantum efficiency [%]')
     plt.grid(True)
 
@@ -148,7 +148,7 @@ def get_error(data1, data2, ax):
     cbar.set_ticks(ticks)
     cbar.ax.minorticks_off()
     cbar.set_ticklabels([f'{tick:.3f}' for tick in ticks])
-    ax.set_title("Spectral angle difference")
+    ax.set_title("Spectral angle [rad]")
     ax.axis('off')
 
 def Normalize(data, min=0.0, max=1.0):

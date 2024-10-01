@@ -11,7 +11,7 @@ from Viewdata import visualize
 data_string, name = util.Get_path()
 start_time = time.time()
 endmember_count = 6
-delta = 0.3
+delta = 0.4
 tol = 0.00005
 
 loops = (300, 5)
@@ -20,7 +20,7 @@ x_end = int(input("x_end: "))
 y_start = int(input("y_start"))
 y_end = int(input("y_end"))"""
 
-x_start, x_end, y_start, y_end = 0, 200, 0, 200
+x_start, x_end, y_start, y_end = 0, 200, 0, 100
 pix_coords = [x_start,x_end,y_start,y_end]
 
 VCA_init = Get_VCA(data_string, endmember_count)
@@ -79,4 +79,4 @@ util.log_results_to_csv("Runs.csv", variable_values=Variable_values, result_valu
 
 print(f"Saved in {save_path}")
 
-visualize(endmembers, abundances, size)
+#visualize(endmembers, abundances, size)
