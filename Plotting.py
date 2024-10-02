@@ -130,12 +130,13 @@ def save_endmembers_few(endmembers, abundances, shape, save_path):
     for i in range(count):
         ax.append(fig.add_subplot(gs[1+int(i/5),i%5]))
         abundance_map = abundances[order[i]].T.reshape(shape[0],shape[1],-1)
-        min_val = np.min(abundance_map[abundance_map > 0.001])  # Smallest non-zero value
-        max_val = np.max(abundance_map)
-        cax = ax[i+1].imshow(abundance_map, interpolation='none', norm=LogNorm(vmin=0.001, vmax=1), cmap='viridis')
+        #min_val = np.min(abundance_map[abundance_map > 0.001])  # Smallest non-zero value
+        #max_val = np.max(abundance_map)
+        #cax = ax[i+1].imshow(abundance_map, interpolation='none', norm=LogNorm(vmin=0.001, vmax=1), cmap='viridis')
+        cax = ax[i+1].imshow(abundance_map, interpolation='none', cmap='viridis')
         cbar = plt.colorbar(cax, ax=ax[i+1])
-        ticks = np.logspace(np.log10(min_val), np.log10(max_val), num=5)
-        cbar.set_ticks(ticks)
+        #ticks = np.logspace(np.log10(min_val), np.log10(max_val), num=5)
+        #cbar.set_ticks(ticks)
         cbar.ax.minorticks_off()
         cbar.ax.yaxis.set_major_formatter(FuncFormatter(scientific_notation))
         ax[i+1].set_title(f"Spectrum {i} abundances")
@@ -148,14 +149,15 @@ def save_endmembers_few(endmembers, abundances, shape, save_path):
 
 def get_error(data1, data2, ax):
     error = util.mean_spectral_angle(data1, data2, map=True)
-    min_val = np.min(error)  # Smallest non-zero value
-    max_val = np.max(error)
-    cax = ax.imshow(error, interpolation='none', cmap='viridis', norm=LogNorm())
+    #min_val = np.min(error)  # Smallest non-zero value
+    #max_val = np.max(error)
+    #cax = ax.imshow(error, interpolation='none', cmap='viridis', norm=LogNorm())
+    cax = ax.imshow(error, interpolation='none', cmap='viridis')
     cbar = plt.colorbar(cax, ax=ax)
-    ticks = np.logspace(np.log10(min_val), np.log10(max_val), num=5)  # Logarithmic spacing of ticks
-    cbar.set_ticks(ticks)
+    #ticks = np.logspace(np.log10(min_val), np.log10(max_val), num=5)  # Logarithmic spacing of ticks
+    #cbar.set_ticks(ticks)
     cbar.ax.minorticks_off()
-    cbar.set_ticklabels([f'{tick:.3f}' for tick in ticks])
+    #cbar.set_ticklabels([f'{tick:.3f}' for tick in ticks])
     ax.set_title("Spectral angle [rad]")
     ax.axis('off')
 

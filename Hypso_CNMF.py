@@ -11,7 +11,7 @@ from Viewdata import visualize
 data_string, name = util.Get_path()
 start_time = time.time()
 endmember_count = 3
-delta = 0.2
+delta = 0.15
 tol = 0.00005
 
 loops = (300, 5)
