@@ -6,39 +6,82 @@ import utilities as util
 import Plotting as plot
 import os
 
+def remove_darkest(data):
+    data_proc = data
+    for i in range(data.shape[2]):
+        data_proc -= np.min(data[:,:,i])
+    return data_proc
+
+def spectral_angle(spectrum1, spectrum2):
+    """Compute the spectral angle (in radians) between two spectra."""
+    # Calculate dot product of the two spectra
+    dot_product = np.dot(spectrum1, spectrum2)
+    
+    # Calculate the norms of the spectra
+    norm1 = np.linalg.norm(spectrum1)
+    norm2 = np.linalg.norm(spectrum2)
+    
+    # Compute the cosine of the spectral angle
+    cos_theta = dot_product / (norm1 * norm2)
+    
+    # To avoid numerical issues, clip the cosine value to the range [-1, 1]
+    cos_theta = np.clip(cos_theta, -1.0, 1.0)
+    
+    # Compute the angle in radians
+    angle = np.arccos(cos_theta)
+    
+    return angle
+
 class simple_PPA:
     def __init__(self, data, n) -> None:
         self.w = np.ones(shape=(data.shape[0],n))/np.sqrt(data.shape[0])
         self.h = np.ones(shape=(n,data.shape[1]))/n
         self.weights = np.ones_like(data)
         self.endmembers = n
-        self.delta = 0.15
+        self.delta = 0.3
+        self.angle_tolerance = np.radians(15)
 
-    def single_member_update(self, data, index):
-        """err = data - np.matmul(self.w,self.h) TODO FIX THIS
-        new_w = self.w
-        new_w[:,index] = 0
-        err_no_i = data - np.matmul(new_w,self.h)
-        dot_products = np.dot(err_no_i, data.T)
-        sorted_pixel_indices = np.argsort(np.diag(dot_products))[::-1]
-        second_best = sorted_pixel_indices[1]
-        self.w[:,index] = data[:,second_best].T
-        diff, second, first, second_i, first_i = 0, 1.1E12, 1E12, -1, -1
-        for i in range(data.shape[1]):
-            new_w[:,index] = data[:,i].T
-            diff = np.linalg.norm(err - np.matmul(new_w,self.h), ord='fro')**2
-            if diff < first:
-                second = first
-                first = diff
-                second_i = first_i
-                first_i = i
-            elif diff < second:
-                second = diff
-                second_i = i
-        if second == -1:
-            return
+    def single_member_update(self, data, i):
+        err = data - np.matmul(self.w,self.h)
+        contrib = np.matmul(self.w[:,i][:,np.newaxis], self.h[i][np.newaxis,:])
+        rem = err - contrib
+
+        elo_sum = np.sum(np.multiply(self.weights*self.h[i].T, err), axis=1) #calculates the total abundance*error of the chosen endmember over entire image
+        elo = elo_sum@rem
+
+        denom_2_sum = self.weights*contrib**2
+        denom = np.sum(denom_2_sum)
+
+        norm = np.array([k@k for k in rem.T])
+        a = np.ones_like(norm, dtype=np.float64)
+        total_change = - (denom*norm)/2*a**2 + elo*a.T 
+        energies = -total_change
+
+        sor_eng = np.argsort(energies)
+        j = 2
+        k = j
+        remE = [k for k in range(self.endmembers)]
+        remE.remove(i)
+        # Get the spectrum for the selected pixel in the ranking
+        pixel_spectrum = data[:, sor_eng[j]]
+
+        # Check if the pixel_spectrum is already in the remaining endmembers
+        in_group = np.any([spectral_angle(pixel_spectrum, self.w[:,k]) < self.angle_tolerance for k in remE])
+
+        # Loop to find a spectrum not already in `self.w[remE]`
+        while in_group:
+            if k == (data.shape[1] - 1) or energies[sor_eng[k]] > 0:
+                return
+            k += 1
+            pixel_spectrum = data[:, sor_eng[k]]  # Get the next ranked spectrum
+            in_group = np.any([spectral_angle(pixel_spectrum, self.w[:,k]) < self.angle_tolerance for k in remE])
+        
+        if j > 1:
+            self.w[:,i] = data[:,sor_eng[j]]
         else:
-            self.w[:,index] = data[:,second_i].T"""
+            if energies[sor_eng[j]]<0:
+                self.w[:,i] = data[:,sor_eng[j]]
+
     
     def all_endmembers_update(self, data):
         for i in range(self.endmembers):
@@ -50,40 +93,35 @@ class simple_PPA:
         data_e = np.ones(shape=(data.shape[0]+1,data.shape[1]))
         data_e[:-1,:] = self.delta*data
 
-        S = np.array([opt.nnls(w_e, i, maxiter=100)[0] for i in data_e.T], dtype=np.float64).transpose()
+        S = np.array([opt.nnls(w_e, i, maxiter=5000)[0] for i in data_e.T], dtype=np.float64).transpose()
         self.h = (S + self.h)/2
     
     def obj(self, data):
-        return np.linalg.norm(data-np.matmul(self.w,self.h), ord='fro')**2
+        return np.sum((data-self.w@self.h)**2)
     
-    def train(self, data):
+    def train(self, data, tol=1e-2):
         obj = self.obj(data)
-        iter_since_best = 0
-        best_obj = 2*obj
+        old_obj = 2*obj
+        dobj = (old_obj-obj)/(old_obj+obj)
         print(obj)
-        while iter_since_best < 10:
+        while np.abs(dobj) > tol:
             self.all_endmembers_update(data)
             self.abundances_update(data)
+            old_obj = obj
             obj = self.obj(data)
-            if self.obj(data) < best_obj:
-                best_obj = self.obj(data)
-                if obj < best_obj - 100:
-                    print("Iter_since_best: 0")
-                    iter_since_best = 0
-            elif obj > best_obj - 100:
-                iter_since_best += 1
-                print(f"Iter_since_best: {iter_since_best}")
+            dobj = (old_obj-obj)/(old_obj+obj)
             print(obj)
 
 
 data_string, name = util.Get_path()
-EM = 5
+EM = 3
 
-x_start, x_end, y_start, y_end = 0, 100, 0, 100
+x_start, x_end, y_start, y_end = 0, 80, 0, 80
 pix_coords = [x_start,x_end,y_start,y_end]
 size = (x_end-x_start, y_end-y_start)
 
 arr = ld.load_l1b_cube(data_string, coords=pix_coords)
+arr = remove_darkest(arr)
 arr = plot.Normalize(arr)
 flat = arr.reshape(arr.shape[0]*arr.shape[1],arr.shape[2]).T
 
