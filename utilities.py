@@ -171,11 +171,10 @@ def mean_spectral_angle(data1, data2, map=False): #returns RMSE spectral angle i
     norm2 = np.maximum(norm2, epsilon)
     cosine_angle = dot_product / (norm1 * norm2)
     cosine_angle = np.clip(cosine_angle, -1.0, 1.0)
-    spectral_angle = np.arccos(cosine_angle)
     if not map:
-        return np.mean(spectral_angle)
+        return np.mean(np.abs(cosine_angle))
     else:
-        return spectral_angle
+        return np.abs(cosine_angle)
 
 def calculate_psnr(original, reconstructed, max_pixel_value=1.0, axis=None):
     if original.shape != reconstructed.shape:
@@ -192,3 +191,9 @@ def calculate_psnr(original, reconstructed, max_pixel_value=1.0, axis=None):
 
     psnr = 10 * np.log10((max_pixel_value ** 2) / mse)
     return psnr
+
+def remove_darkest(data):
+    data_proc = np.copy(data)
+    for i in range(data.shape[2]):
+        data_proc[:,:,i] -= 0.9*np.min(data[:,:,i])
+    return data_proc

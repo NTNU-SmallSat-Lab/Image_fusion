@@ -8,7 +8,8 @@ def CNMF(HSI_data: np.array,
          MSI_data: np.array, 
          spatial_transform: np.array, 
          spectral_response: np.array, 
-         VCA_init: np.array,
+         w_init: np.array,
+         h_init: np.array,
          delta=0.9,
          endmembers=40, 
          loops=(10,5),
@@ -38,18 +39,19 @@ def CNMF(HSI_data: np.array,
 
     w = np.ones(shape=(h_bands+1,endmembers),dtype=precision)
 
+    #h = np.ones(shape=(endmembers,m_flat.shape[1]),dtype=precision)/endmembers
     h = np.ones(shape=(endmembers,m_flat.shape[1]),dtype=precision)/endmembers
     
     w_m = np.ones(shape=(spectral_response.shape[0]+1,w.shape[1]))
     w_m[:-1,:] = delta*np.matmul(spectral_response, w[:-1,:])
-    h_h = np.matmul(h,spatial_transform)
+    h_h = h_init
 
     """
     TODO consider sparsity enforcement with masks that push values to 0 if near, and ensure that division by 0 is unproblematic
     """
 
     #STEP 1a
-    w[:-1,:] = delta*VCA_init
+    w[:-1,:] = delta*w_init
     CheckMat(np.matmul(w,h_h),"w*h_h", zero=True)
     h_h = h_h*np.matmul(w.transpose(),h_flat)/np.matmul(w.transpose(),np.matmul(w,h_h))
     done_i, done_o, count_i, count_o, = False, False, 0, 0
@@ -112,10 +114,7 @@ def CNMF(HSI_data: np.array,
                 done_i = True
         count_o += 1
         if count_o >= i_out :
-            if np.mean(np.abs(np.sum(h, axis=0))-1 > 1E-5):
-                done_o = True
-            else:
-                print("Abundances outside constraints, extending run.")
+            done_o = True
 
         """print(f"Mean h per pixel sum: {np.mean(np.sum(h, axis=0))}")
         print(f"Max h per pixel sum: {np.max(np.sum(h, axis=0))}")

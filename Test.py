@@ -2,23 +2,35 @@ import numpy as np
 import utilities as util
 import loader as ld
 import matplotlib.pyplot as plt
+from Plotting import Normalize
 
-def range(data1, data2):
-    max1 = np.max(data1, axis=(0,1))
-    max2 = np.max(data2, axis=(0,1))
-    
-    min1 = np.min(data1, axis=(0,1))
-    min2 = np.min(data2, axis=(0,1))
+# Load data path and cube
+data_string, name = util.Get_path()
+full_arr = ld.load_l1b_cube(data_string)
 
-    range1 = np.max(data1, axis=(0,1))-np.min(data1, axis=(0,1))
-    range2 = np.max(data2, axis=(0,1))-np.min(data2, axis=(0,1))
+# Remove darkest pixels
+darkest_removed = util.remove_darkest(full_arr)
 
-    plt.figure(figsize=(10,10))
-    plt.plot(max1, color='r', linestyle='dotted', lw=0.4, label="Original max")
-    plt.plot(min1, color='r', linestyle='dashed', lw=0.4, label="Original min")
-    plt.plot(max2, color='b', linestyle='dotted', lw=0.4, label="Upscaled max")
-    plt.plot(min2, color='b', linestyle='dashed', lw=0.4, label="Upscaled min")
-    plt.plot(range1, color='r', label="Original Range")
-    plt.plot(range2, color='b', label="Upscaled Range")
-    plt.legend(loc='upper left')
-    plt.show()
+# Load RGB mask and map to spectral bands
+rgb_mask = np.loadtxt("RGB_mask.txt")
+spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700, :], 112)
+
+# Normalize and apply spectral response matrix
+full_arr = Normalize(np.matmul(full_arr, spectral_response_matrix.T))
+darkest_removed = Normalize(np.matmul(darkest_removed, spectral_response_matrix.T))
+
+# Create a figure with two subplots
+fig, axes = plt.subplots(1, 2, figsize=(12, 6))  # 1 row, 2 columns
+
+# Plot the full array in the first subplot
+axes[0].imshow(full_arr)
+axes[0].set_title("Full Array Image")
+axes[0].axis('off')  # Hide axis for cleaner display
+
+# Plot the darkest-removed array in the second subplot
+axes[1].imshow(darkest_removed)
+axes[1].set_title("Darkest Removed Image")
+axes[1].axis('off')  # Hide axis for cleaner display
+
+# Show the figure
+plt.show()

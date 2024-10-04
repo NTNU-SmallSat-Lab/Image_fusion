@@ -6,11 +6,12 @@ from CNMF import CNMF, Get_VCA
 import loader as ld
 import time
 from Viewdata import visualize
+from PPA import get_PPA
 
 
 data_string, name = util.Get_path()
 start_time = time.time()
-endmember_count = 3
+endmember_count = 4
 delta = 0.15
 tol = 0.00005
 
@@ -20,20 +21,22 @@ x_end = int(input("x_end: "))
 y_start = int(input("y_start"))
 y_end = int(input("y_end"))"""
 
-x_start, x_end, y_start, y_end = 100, 300, 100, 300
+x_start, x_end, y_start, y_end = 200, 500, 0, 50
 pix_coords = [x_start,x_end,y_start,y_end]
 
-VCA_init = Get_VCA(data_string, endmember_count)
+#VCA_init = Get_VCA(data_string, endmember_count)
 
 full_arr = ld.load_l1b_cube(data_string)
 
-arr = Normalize(full_arr[x_start:x_end,y_start:y_end,:], min=1E-6, max=1.0)
+arr = Normalize(util.remove_darkest(full_arr[x_start:x_end,y_start:y_end,:]), min=1E-6, max=1.0)
+#arr = Normalize(full_arr[x_start:x_end,y_start:y_end,:], min=1E-6, max=1.0)
 
 size = (x_end-x_start,y_end-y_start)
 downsample_factor = 2
 sigma = 2
 
 lowres_downsampled = util.Downsample(arr, sigma=sigma, downsampling_factor=downsample_factor) #Generate downsampled HSI
+w_init, h_init = get_PPA(lowres_downsampled, endmember_count)
 upsized_image = np.repeat(np.repeat(lowres_downsampled, downsample_factor, axis=0), downsample_factor, axis=1)
 
 spatial_transform_matrix = util.Gen_downsampled_spatial(downsample_factor,size).transpose() #Generate spatial transform for downsampling
@@ -47,11 +50,28 @@ Upscaled_datacube, endmembers, abundances = CNMF(lowres_downsampled,
                                                  rgb_representation, 
                                                  spatial_transform_matrix, 
                                                  spectral_response_matrix, 
-                                                 VCA_init=VCA_init, 
+                                                 w_init=w_init,
+                                                 h_init=h_init,
                                                  endmembers=endmember_count,
                                                  delta=delta,
                                                  loops=loops,
                                                  tol=tol)
+
+while np.mean(np.sum(abundances, axis=0)) - 1 > 1E-4:
+        delta = 0.75*delta
+        print(f"Abundances outside constraints, reducing delta to {delta} and rerunning")
+        Upscaled_datacube, endmembers, abundances = CNMF(lowres_downsampled, 
+                                                 rgb_representation, 
+                                                 spatial_transform_matrix, 
+                                                 spectral_response_matrix, 
+                                                 w_init=w_init,
+                                                 h_init=h_init,
+                                                 endmembers=endmember_count,
+                                                 delta=delta,
+                                                 loops=loops,
+                                                 tol=tol)
+        
+#abundances = abundances/np.sum(abundances, axis=0)
 
 assert not np.any(Upscaled_datacube < 1E-9), "Zero values in output"
 
