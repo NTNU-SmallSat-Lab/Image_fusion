@@ -150,7 +150,7 @@ def PixelSumToOne(data: np.array) -> np.array:
     new_data = data/pixel_sums
     return new_data
 
-def Get_VCA(string: str, endmembers: int, coords=[0,0,0,0], bands=[0,0]):
+def Get_VCA(data, endmembers: int):
     """Retrieve endmembers of an l1b datacube using vertex component analysis
 
     Args:
@@ -161,11 +161,6 @@ def Get_VCA(string: str, endmembers: int, coords=[0,0,0,0], bands=[0,0]):
     Returns:
         np.array: returns spectral signature matrix shape=(bands,endmembers)
     """
-    data = ld.load_l1b_cube(string)
-    if coords != [0,0,0,0]:
-        data=data[coords[0]:coords[1],coords[2]:coords[3],:]
-    if bands != [0,0]:
-        data = data[:,:,bands[0]:bands[1]]
     h_flat = data.reshape(data.shape[0]*data.shape[1],data.shape[2]).T
     Ae, _, _ = vca(h_flat, endmembers, verbose=True)
     return Ae
