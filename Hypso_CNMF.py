@@ -11,8 +11,8 @@ from PPA import get_PPA
 
 data_string, name = util.Get_path()
 start_time = time.time()
-endmember_count = 4
-delta = 0.10
+endmember_count = 3
+delta = 0.15
 tol = 0.00005
 PPA = False
 Unhaze = True
@@ -41,7 +41,7 @@ sigma = 2
 
 lowres_downsampled = util.Downsample(arr, sigma=sigma, downsampling_factor=downsample_factor) #Generate downsampled HSI
 if PPA:
-        w_init, h_init = get_PPA(lowres_downsampled, endmember_count)
+        w_init, h_init = get_PPA(lowres_downsampled, endmember_count, delta=delta)
 else:
         w_init, h_init = Get_VCA(lowres_downsampled, endmember_count), np.ones(shape=(endmember_count, lowres_downsampled.shape[0]*lowres_downsampled.shape[1]))
 
@@ -79,10 +79,14 @@ while np.mean(np.sum(abundances, axis=0)) - 1 > 1E-4:
                                                  delta=delta,
                                                  loops=loops,
                                                  tol=tol)
+abundances = np.clip(abundances, a_min=0, a_max=1)        
+"""endmembers, abundances = get_PPA(Upscaled_datacube, endmember_count, delta, endmembers, abundances)
+Upscaled_datacube = np.matmul(endmembers, abundances).T.reshape(Upscaled_datacube.shape[0], 
+                                                                          Upscaled_datacube.shape[1], 
+                                                                          Upscaled_datacube.shape[2])"""
         
-abundances = np.clip(abundances, a_min=0, a_max=1)
 
-assert not np.any(Upscaled_datacube < 1E-9), "Zero values in output"
+
 if PPA:
         type = "PPA"
 else:
