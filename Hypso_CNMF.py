@@ -16,14 +16,14 @@ delta = 0.15
 tol = 0.00005
 PPA = False
 Unhaze = True
-
 loops = (300, 5)
+x_start, x_end, y_start, y_end = 200, 400, 0, 200
+
 """x_start = int(input("x_start: "))
 x_end = int(input("x_end: "))
 y_start = int(input("y_start"))
 y_end = int(input("y_end"))"""
 
-x_start, x_end, y_start, y_end = 200, 400, 0, 200
 pix_coords = [x_start,x_end,y_start,y_end]
 
 #VCA_init = Get_VCA(data_string, endmember_count)
