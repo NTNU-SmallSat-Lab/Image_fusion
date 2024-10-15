@@ -7,6 +7,7 @@ import loader as ld
 import time
 from Viewdata import visualize
 from PPA import get_PPA
+import PPA_NMF as ppa
 
 
 data_string, name = util.Get_path()
@@ -17,7 +18,7 @@ tol = 0.00005
 PPA = False
 Unhaze = True
 loops = (300, 5)
-x_start, x_end, y_start, y_end = 200, 400, 0, 200
+x_start, x_end, y_start, y_end = 100, 300, 0, 200
 
 """x_start = int(input("x_start: "))
 x_end = int(input("x_end: "))
@@ -25,8 +26,6 @@ y_start = int(input("y_start"))
 y_end = int(input("y_end"))"""
 
 pix_coords = [x_start,x_end,y_start,y_end]
-
-#VCA_init = Get_VCA(data_string, endmember_count)
 
 full_arr = ld.load_l1b_cube(data_string)
 
@@ -36,10 +35,11 @@ else:
         arr = Normalize(full_arr[x_start:x_end,y_start:y_end,:], min=1E-6, max=1.0)
 
 size = (x_end-x_start,y_end-y_start)
-downsample_factor = 2
-sigma = 2
+downsample_factor = 4
+sigma = 4
 
 lowres_downsampled = util.Downsample(arr, sigma=sigma, downsampling_factor=downsample_factor) #Generate downsampled HSI
+
 if PPA:
         w_init, h_init = get_PPA(lowres_downsampled, endmember_count, delta=delta)
 else:
@@ -55,7 +55,7 @@ spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],112)
 
 rgb_representation = np.matmul(arr,spectral_response_matrix.T)
 
-Upscaled_datacube, endmembers, abundances = CNMF(lowres_downsampled, 
+"""Upscaled_datacube, endmembers, abundances = CNMF(lowres_downsampled, 
                                                  rgb_representation, 
                                                  spatial_transform_matrix, 
                                                  spectral_response_matrix, 
@@ -64,9 +64,9 @@ Upscaled_datacube, endmembers, abundances = CNMF(lowres_downsampled,
                                                  endmembers=endmember_count,
                                                  delta=delta,
                                                  loops=loops,
-                                                 tol=tol)
+                                                 tol=tol)"""
 
-while np.mean(np.sum(abundances, axis=0)) - 1 > 1E-4:
+"""while np.mean(np.sum(abundances, axis=0)) - 1 > 1E-4:
         delta = 0.75*delta
         print(f"Abundances outside constraints, reducing delta to {delta} and rerunning")
         Upscaled_datacube, endmembers, abundances = CNMF(lowres_downsampled, 
@@ -78,7 +78,10 @@ while np.mean(np.sum(abundances, axis=0)) - 1 > 1E-4:
                                                  endmembers=endmember_count,
                                                  delta=delta,
                                                  loops=loops,
-                                                 tol=tol)
+                                                 tol=tol)"""
+
+Upscaled_datacube, endmembers, abundances = ppa.CPPA(lowres_downsampled, rgb_representation, spatial_transform_matrix, spectral_response_matrix, delta, endmember_count)
+
 abundances = np.clip(abundances, a_min=0, a_max=1)        
 """endmembers, abundances = get_PPA(Upscaled_datacube, endmember_count, delta, endmembers, abundances)
 Upscaled_datacube = np.matmul(endmembers, abundances).T.reshape(Upscaled_datacube.shape[0], 

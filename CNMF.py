@@ -136,20 +136,6 @@ def CheckMat(data: np.array, name: str, zero = False):
     if zero:
         assert not np.any(data == 0), f"Matrix {name} has Zero values"
 
-def PixelSumToOne(data: np.array) -> np.array:
-    """Modify matrix so sum of each column vector is 1
-
-    Args:
-        data (np.array): matrix shape.len=2
-
-    Returns:
-        np.array: matrix with vectors summed to one
-    """
-    assert len(data.shape) == 2, "Array incorrectly dimensioned"
-    pixel_sums = np.sum(data, axis=0)
-    new_data = data/pixel_sums
-    return new_data
-
 def Get_VCA(data, endmembers: int):
     """Retrieve endmembers of an l1b datacube using vertex component analysis
 

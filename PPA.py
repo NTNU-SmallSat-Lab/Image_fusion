@@ -8,13 +8,9 @@ import os
 from joblib import Parallel, delayed
 
 class simple_PPA:
-    def __init__(self, data, n, delta=15, w=np.array([None]), h=np.array([None])) -> None:
-        if w.any() == None or h.any() == None:
-            self.w = np.ones(shape=(data.shape[0],n))/np.sqrt(data.shape[0])
-            self.h = np.ones(shape=(n,data.shape[1]))/n
-        else:
-            self.w = w
-            self.h = h
+    def __init__(self, data, n, delta=0.15) -> None:
+        self.w = np.ones(shape=(data.shape[0], n)) / np.sqrt(data.shape[0])
+        self.h = np.ones(shape=(n, data.shape[1])) / n
         self.endmembers = n
         self.weights = np.ones_like(data)
         self.delta = delta
@@ -35,6 +31,7 @@ class simple_PPA:
         energies = -total_change
 
         sor_eng = np.argsort(energies)
+        print(energies[sor_eng[:5]])
         j = 1
         remE = [k for k in range(self.endmembers)]
         remE.remove(i)
@@ -69,7 +66,7 @@ class simple_PPA:
     def obj(self, data):
         return np.sum((data-self.w@self.h)**2)
     
-    def train(self, data, tol=1e-2):
+    def train(self, data, tol=1e-3):
         obj = self.obj(data)
         old_obj = 2*obj
         dobj = (old_obj-obj)/(old_obj+obj)
@@ -82,10 +79,10 @@ class simple_PPA:
             dobj = (old_obj-obj)/(old_obj+obj)
             print(obj)
 
-def get_PPA(data, EM, delta=0.35, w=np.array([None]), h=np.array([None])):
+def get_PPA(data, EM, delta=0.15):
     flat = data.reshape(data.shape[0]*data.shape[1],data.shape[2]).T
 
-    sppa = simple_PPA(flat, EM, delta, w, h)
+    sppa = simple_PPA(flat, EM, delta)
     sppa.train(flat)
     return sppa.w, sppa.h
 
@@ -93,7 +90,7 @@ if __name__ == "__main__":
     data_string, name = util.Get_path()
     EM = 3
 
-    x_start, x_end, y_start, y_end = 0, 100, 0, 100
+    x_start, x_end, y_start, y_end = 0, 200, 0, 200
     pix_coords = [x_start,x_end,y_start,y_end]
     size = (x_end-x_start, y_end-y_start)
 
