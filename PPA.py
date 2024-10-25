@@ -12,26 +12,26 @@ class simple_PPA:
         self.w = np.ones(shape=(data.shape[0], n)) / np.sqrt(data.shape[0])
         self.h = np.ones(shape=(n, data.shape[1])) / n
         self.endmembers = n
-        self.weights = np.ones_like(data)
+        self.weights = np.ones(data.shape[1])
         self.delta = delta
 
     def single_member_update(self, data, i):
-        err = data - np.matmul(self.w,self.h)
-        rem = data - self.w[:,i][:,np.newaxis] #remainder without EM contribution
+        err = (data - self.w@self.h).T
+        rem = (data - self.w[:,i][:,np.newaxis]).T #remainder without EM contribution'
 
-        elo_sum = np.sum(np.multiply(self.weights*self.h[i], err), axis=1) #calculates the total error for each band
-        elo = elo_sum@rem
-
-        denom_2_sum = self.weights*self.w[:,i][:,np.newaxis]**2
+        elo_sum = np.sum(np.multiply(self.weights*self.h[i], err.T), axis=1) #calculates the total error for each band
+        elo = elo_sum@rem.T
+        denom_2_sum = self.weights*self.h[i]**2
         denom = np.sum(denom_2_sum)
 
-        norm = np.array([k@k for k in rem.T])
+        norm = np.array([k@k for k in rem])
         a = np.ones_like(norm, dtype=np.float64)
-        total_change = - (denom*norm)/2*a**2 + elo*a.T 
+        #print(f"denom: ({denom.shape},{denom.sum()})\nnorm: ({norm.shape},{norm.sum()})\nelo: ({elo.shape},{elo.sum()})")
+        total_change = - (denom*norm)/2*a**2 + elo.T*a.T 
         energies = -total_change
 
         sor_eng = np.argsort(energies)
-        print(energies[sor_eng[:5]])
+        #print(energies.min())
         j = 1
         remE = [k for k in range(self.endmembers)]
         remE.remove(i)
@@ -51,7 +51,7 @@ class simple_PPA:
 
     
     def all_endmembers_update(self, data):
-        for i in range(self.endmembers-1,0,-1):
+        for i in range(self.endmembers):
             self.single_member_update(data, i)
     
     def abundances_update(self, data):
@@ -66,7 +66,7 @@ class simple_PPA:
     def obj(self, data):
         return np.sum((data-self.w@self.h)**2)
     
-    def train(self, data, tol=1e-3):
+    def train(self, data, tol=1e-2):
         obj = self.obj(data)
         old_obj = 2*obj
         dobj = (old_obj-obj)/(old_obj+obj)
@@ -90,7 +90,7 @@ if __name__ == "__main__":
     data_string, name = util.Get_path()
     EM = 3
 
-    x_start, x_end, y_start, y_end = 0, 200, 0, 200
+    x_start, x_end, y_start, y_end = 100, 300, 0, 200
     pix_coords = [x_start,x_end,y_start,y_end]
     size = (x_end-x_start, y_end-y_start)
 
@@ -99,7 +99,7 @@ if __name__ == "__main__":
     arr = plot.Normalize(arr)
     flat = arr.reshape(arr.shape[0]*arr.shape[1],arr.shape[2]).T
 
-    sppa = simple_PPA(flat, EM, delta=0.15)
+    sppa = simple_PPA(flat, EM, delta=0.05)
 
     sppa.train(flat)
 
