@@ -1,0 +1,25 @@
+# Config file for hyperspectral fusion
+
+#pixel coordinates
+x_start = 0
+x_end = 400
+y_start = 100
+y_end = 200
+
+delta = 0.15
+endmember_n = 3
+
+#Types PPA (pure pixel analysis) or CNMF (coupled non-negative matrix factorization)
+type = PPA
+
+#Remove 90% of darkest pixel in each band
+remove_darkest = False
+
+inner_loops = 300
+outer_loops = 5
+tol = 1e-2
+
+downsample_factor = 4
+sigma = 2
+
+rgb_mask = RGB_mask.txt

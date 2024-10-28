@@ -10,9 +10,9 @@ def CPPA(HSI_data: np.array,
          spatial_transform: np.array, 
          spectral_response: np.array,
          delta=0.15,
-         endmembers=40, 
+         endmembers=3, 
          loops=(10,5),
-         tol=0.00005) -> list[np.array, np.array, np.array]:
+         tol=1e-2) -> list[np.array, np.array, np.array]:
     """Performs coupled Nonnegative matrix factorisation to upscale HSI data using spatial data from MSI
 
     Args:
@@ -31,29 +31,16 @@ def CPPA(HSI_data: np.array,
     
     h_bands, m_bands = HSI_data.shape[2], MSI_data.shape[2]
 
-    #Flatten arrays, add sum-to-one requirement
     h_flat, m_flat = HSI_data.reshape(HSI_data.shape[0]*HSI_data.shape[1],h_bands).T, MSI_data.reshape(-1,m_bands).T
     
-    h_ppa = simple_PPA(data=h_flat, delta=delta, n=3)
-    m_ppa = simple_PPA(data=m_flat, delta=0.15, n=3)
+    h_ppa = simple_PPA(data=h_flat, delta=delta, n=endmembers)
+    m_ppa = simple_PPA(data=m_flat, delta=delta, n=endmembers)
 
-    w, h = main_loop(h_ppa, m_ppa, h_flat, m_flat, spectral_response, spatial_transform, 2)
+    w, h = main_loop(h_ppa, m_ppa, h_flat, m_flat, spectral_response, spatial_transform, loops[1], tol)
     out_flat = np.matmul(w,h)
-    out = Normalize(out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands), min=1E-6, max=1.0)
+    #out = Normalize(out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands), min=1E-6, max=1.0)
+    out = out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands)
     return out, w, h
-
-def CheckMat(data: np.array, name: str, zero = False):
-    """Simple check to ensure matrix well defined
-
-    Args:
-        data (np.array): Matrix to be checked
-        name (string): String to identify matrix in output
-        zero (bool, optional): Whether to check for zeros. Defaults to False.
-    """
-    assert not np.any(np.isinf(data)), f"Matrix {name} has infinite values"
-    assert not np.any(np.isnan(data)), f"Matrix {name} has NaN values"
-    if zero:
-        assert not np.any(data == 0), f"Matrix {name} has Zero values"
 
 
 def PPA_HSI_step(PPA_obj: simple_PPA, data):
@@ -73,8 +60,10 @@ def main_loop(PPA_obj_h: simple_PPA,
               data_h: np.array, 
               data_m: np.array, 
               spectral_transform: np.array, 
-              spatial_transform: np.array, j: int):
-    for i in range(j):
+              spatial_transform: np.array, 
+              loops: int,
+              tol: float):
+    for i in range(loops):
         print(f"Starting loop {i}")
         PPA_HSI_step(PPA_obj_h, data_h)
         PPA_obj_m.w = PPA_to_RGB(PPA_obj_h, spectral_transform)

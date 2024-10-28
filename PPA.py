@@ -6,6 +6,7 @@ import utilities as util
 import Plotting as plot
 import os
 from joblib import Parallel, delayed
+from scipy.spatial.distance import euclidean
 
 class simple_PPA:
     def __init__(self, data, n, delta=0.15) -> None:
@@ -33,21 +34,30 @@ class simple_PPA:
         sor_eng = np.argsort(energies)
         #print(energies.min())
         j = 1
+        # Define a threshold for spectral similarity
+        threshold = 0.15
+
         remE = [k for k in range(self.endmembers)]
         remE.remove(i)
 
+        # Initial pixel spectrum
         pixel_spectrum = data[:, sor_eng[j]]
-        
-        in_group = np.any([pixel_spectrum == self.w[:,j] for j in remE])
+
+        # Check if the pixel spectrum is too similar to any existing spectra
+        in_group = np.any([euclidean(pixel_spectrum, self.w[:, j]) < threshold for j in remE])
 
         while in_group:
-            if (j == data.shape[1]-1):
+            if j == data.shape[1] - 1:  # Break if at the last pixel
                 break
             j += 1
             pixel_spectrum = data[:, sor_eng[j]]  # Get the next ranked spectrum
-            in_group = np.any([pixel_spectrum == self.w[:,j] for j in remE])
-        if energies[sor_eng[j]]<0:
-            self.w[:,i] = data[:,sor_eng[j]]
+
+            # Check similarity again with the updated spectrum
+            in_group = np.any([euclidean(pixel_spectrum, self.w[:, j]) < threshold for j in remE])
+
+        # If the selected spectrum has sufficient energy, assign it
+        if energies[sor_eng[j]] < 0:
+            self.w[:, i] = data[:, sor_eng[j]]
 
     
     def all_endmembers_update(self, data):
