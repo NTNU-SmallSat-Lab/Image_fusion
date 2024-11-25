@@ -59,7 +59,7 @@ def save_endmembers_many(endmembers, abundances, shape, save_path):
     plt.close(fig)
 
 def save_final_image(Original: np.array, downscaled: np.array, Upscaled: np.array, spectral_response_matrix: np.array, save_path: str):
-    fig = plt.figure(figsize=(10,15))
+    fig = plt.figure(figsize=(8,15))
     gs = fig.add_gridspec(3,2)
     input = Normalize(np.matmul(Original, spectral_response_matrix.T))
     downscaled = Normalize(np.matmul(downscaled, spectral_response_matrix.T))
@@ -99,7 +99,7 @@ def save_endmembers_few(endmembers, abundances, shape, save_path):
     else:
         columns = 5
     rows = int((count-1)/5)+1
-    fig = plt.figure(figsize=(20,5+5*rows))
+    fig = plt.figure(figsize=(10,5+5*rows))
     gs = fig.add_gridspec(1+rows,columns)
     order = []
     for i in range(count):
@@ -141,7 +141,7 @@ def save_endmembers_few(endmembers, abundances, shape, save_path):
         cbar.ax.yaxis.set_major_formatter(FuncFormatter(scientific_notation))
         ax[i+1].set_title(f"Spectrum {i} abundances")
         ax[i+1].axis('off')
-    plt.tight_layout()
+    plt.tight_layout(pad=0.1)
     plt.savefig(f"{save_path}Endmembers", bbox_inches='tight', dpi=300)
     plt.close(fig)
 

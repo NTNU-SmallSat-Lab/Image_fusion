@@ -1,11 +1,9 @@
 import scipy.optimize as opt
 import numpy as np
-import matplotlib.pyplot as plt
 import loader as ld
 import utilities as util
 import Plotting as plot
 import os
-from joblib import Parallel, delayed
 from scipy.spatial.distance import euclidean
 
 class simple_PPA:
@@ -35,7 +33,7 @@ class simple_PPA:
         #print(energies.min())
         j = 1
         # Define a threshold for spectral similarity
-        threshold = 0.15
+        threshold = 0.3
 
         remE = [k for k in range(self.endmembers)]
         remE.remove(i)
@@ -98,18 +96,18 @@ def get_PPA(data, EM, delta=0.15):
 
 if __name__ == "__main__":
     data_string, name = util.Get_path()
-    EM = 3
+    EM = 3 #Number of endmember spectra
 
-    x_start, x_end, y_start, y_end = 100, 300, 0, 200
+    x_start, x_end, y_start, y_end = 0, 300, 0, 200 #Coordinates that image is cropped to
     pix_coords = [x_start,x_end,y_start,y_end]
     size = (x_end-x_start, y_end-y_start)
 
     arr = ld.load_l1b_cube(data_string, coords=pix_coords)
-    arr = util.remove_darkest(arr)
+    arr = util.remove_darkest(arr) #Removes 90% of the darkest pixel in each band from entire image (in that band)
     arr = plot.Normalize(arr)
     flat = arr.reshape(arr.shape[0]*arr.shape[1],arr.shape[2]).T
 
-    sppa = simple_PPA(flat, EM, delta=0.05)
+    sppa = simple_PPA(flat, EM, delta=0.15)
 
     sppa.train(flat)
 
@@ -121,5 +119,6 @@ if __name__ == "__main__":
     spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],112)
     upscaled = np.matmul(sppa.w,sppa.h).T.reshape(arr.shape[0], arr.shape[1], arr.shape[2])
 
+    #Note that plotting functions are from image fusion module, need to be rewritten for actual PPA if that is intended use
     plot.save_endmembers_few(sppa.w, sppa.h, size, save_path)
     plot.save_final_image(arr, np.ones_like(arr), upscaled, spectral_response_matrix, save_path)

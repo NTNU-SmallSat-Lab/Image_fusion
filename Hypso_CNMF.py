@@ -11,7 +11,6 @@ class Fusion:
         def __init__(self): #Too many class variables, those initialised in config file need to be clearly present
                 self.data_string, self.name = util.Get_path()
                 self.read_config()
-                self.save_path = f"outputs\\{self.type}_{self.name}_{self.x_start}-{self.x_end}x_{self.y_start}-{self.y_end}y_{self.endmember_n}EM_{self.delta}d\\"
                 self.pix_coords = [self.x_start,self.x_end,self.y_start,self.y_end]
                 self.loops = (self.inner_loops, self.outer_loops)
                 self.full_arr = ld.load_l1b_cube(self.data_string)
@@ -52,14 +51,14 @@ class Fusion:
         def fuse(self):
                 start_time = time.time()
                 if self.type == "PPA":
-                        self.Upscaled_datacube, self.endmembers, self.abundances = ppa.CPPA(self.lowres_downsampled, 
-                                                                                            self.rgb_representation, 
-                                                                                            self.spatial_transform_matrix, 
-                                                                                            self.spectral_response_matrix, 
-                                                                                            self.delta, 
-                                                                                            self.endmember_n,
-                                                                                            self.loops,
-                                                                                            self.tol)
+                        self.Upscaled_datacube, self.endmembers, self.abundances = ppa.CPPA(HSI_data = self.lowres_downsampled, 
+                                                                                            MSI_data= self.rgb_representation, 
+                                                                                            spatial_transform= self.spatial_transform_matrix, 
+                                                                                            spectral_response= self.spectral_response_matrix, 
+                                                                                            delta= self.delta, 
+                                                                                            endmembers= self.endmember_n,
+                                                                                            loops= self.loops,
+                                                                                            tol= self.tol)
                 elif self.type == "CNMF":
                         self.Upscaled_datacube, self.endmembers, self.abundances = CNMF(self.lowres_downsampled, 
                                                                                             self.rgb_representation, 
@@ -73,12 +72,17 @@ class Fusion:
                                                                                             self.tol)
                 else:
                         raise ValueError(f"{self.type} is not a fusion method")
+                if np.abs(np.mean(np.sum(self.abundances, axis = 0))-1) > 1e-1:
+                        self.delta = self.delta*0.5
+                        print(f"Abundances outside of allowed values, reducing delta to {self.delta}")
+                        self.fuse()
                 self.mean_spatial_error = np.mean(np.abs(self.arr - self.Upscaled_datacube))
                 self.spectral_error = util.mean_spectral_angle(self.arr, self.Upscaled_datacube)
                 self.PSNR = util.calculate_psnr(self.arr, self.Upscaled_datacube)
                 self.runtime = time.time()-start_time
         
         def log_run(self):
+                self.save_path = f"outputs\\{self.type}_{self.name}_{self.x_start}-{self.x_end}x_{self.y_start}-{self.y_end}y_{self.endmember_n}EM_{self.delta}d_{self.remove_darkest}RD\\"
                 self.Result_values = {"Absolute mean error":self.mean_spatial_error,
                                  "Spectral_angle_Cosine":self.spectral_error,
                                  "Peak SNR":self.PSNR}
@@ -94,6 +98,7 @@ class Fusion:
                                    "Type": self.type, 
                                    "Remove_darkest": self.remove_darkest}
                 util.log_results_to_csv("Runs.csv", variable_values=self.Variable_values, result_values=self.Result_values)
+                self.save_files()
         
         def save_files(self):
                 if not os.path.exists("outputs"):
@@ -124,4 +129,3 @@ if __name__ == "__main__":
         HSI_fusion = Fusion()
         HSI_fusion.fuse()
         HSI_fusion.log_run()
-        HSI_fusion.save_files()
