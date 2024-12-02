@@ -3,6 +3,7 @@ import utilities as util
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from matplotlib.ticker import FuncFormatter
+from matplotlib.colors import Normalize as CNorm
 
 def save_spec_error(data1, data2, ax):
     levels = np.loadtxt("RGB_mask.txt")*100
@@ -61,9 +62,17 @@ def save_endmembers_many(endmembers, abundances, shape, save_path):
 def save_final_image(Original: np.array, downscaled: np.array, Upscaled: np.array, spectral_response_matrix: np.array, save_path: str):
     fig = plt.figure(figsize=(8,15))
     gs = fig.add_gridspec(3,2)
-    input = Normalize(np.matmul(Original, spectral_response_matrix.T))
+    single_band = True
+    display_band = 105
+    if single_band:
+        input = Normalize(Original[:,:,display_band])
+        output = Normalize(Upscaled[:,:,display_band])
+        band_string = f"{int(util.band_to_wavelength(display_band)[0])}-{int(util.band_to_wavelength(display_band)[1])}nm band"
+    else:
+        input = Normalize(np.matmul(Original, spectral_response_matrix.T))
+        output = Normalize(np.matmul(Upscaled, spectral_response_matrix.T))
+        band_string = "RGB representation"
     downscaled = Normalize(np.matmul(downscaled, spectral_response_matrix.T))
-    output = Normalize(np.matmul(Upscaled, spectral_response_matrix.T))
 
     ax1 = fig.add_subplot(gs[0,0])
     ax2 = fig.add_subplot(gs[0,1])
@@ -71,16 +80,16 @@ def save_final_image(Original: np.array, downscaled: np.array, Upscaled: np.arra
     ax4 = fig.add_subplot(gs[1,1])
     ax5 = fig.add_subplot(gs[2,:])
     
-    ax1.imshow(input, interpolation='none')
-    ax1.set_title("Original")
+    ax1.imshow(input, interpolation='none', cmap='gray')
+    ax1.set_title(f"Original {band_string}")
     ax1.axis('off')
 
     ax2.imshow(downscaled, interpolation='none')
-    ax2.set_title("Downscaled")
+    ax2.set_title("Downscaled HSI RGB representation")
     ax2.axis('off')
 
-    ax3.imshow(output, interpolation='none')
-    ax3.set_title("Upscaled")
+    ax3.imshow(output, interpolation='none', cmap='gray')
+    ax3.set_title(f"Output {band_string}")
     ax3.axis('off')
 
     get_error(Original, Upscaled, ax4)
@@ -98,15 +107,15 @@ def save_endmembers_few(endmembers, abundances, shape, save_path):
         columns = count
     else:
         columns = 5
-    rows = int((count-1)/5)+1
-    fig = plt.figure(figsize=(10,5+5*rows))
-    gs = fig.add_gridspec(1+rows,columns)
+    rows = int((count - 1) / 5) + 1
+    fig = plt.figure(figsize=(10, 5 + 5 * rows))
+    gs = fig.add_gridspec(2 + rows, columns, height_ratios=[0.8] + [1.2] * rows + [0.1])  # Smaller ratio for the color bar
     order = []
     for i in range(count):
         max_abundance = 0
         selected = -1
         for j in range(count):
-            abundance = np.sum(abundances[j,:])
+            abundance = np.sum(abundances[j, :])
             if (abundance > max_abundance) and j not in order:
                 max_abundance = abundance
                 selected = j
@@ -116,34 +125,43 @@ def save_endmembers_few(endmembers, abundances, shape, save_path):
     def scientific_notation(x, pos):
         return f'{x:.3f}'
     
+    # Generate x-axis labels
     start_nm, end_nm = util.band_to_wavelength(4)[0].astype(int), util.band_to_wavelength(116)[1].astype(int)
     
+    # Plot the spectra
     ax = []
-    ax.append(fig.add_subplot(gs[0,:]))
-    lines = [('-',1), ('dashed', 1), ('dotted',2)]
+    ax.append(fig.add_subplot(gs[0, :]))
+    lines = [('-', 1), ('dashed', 1), ('dotted', 2)]
     for i in range(count):
-        line = lines[i%3]
-        ax[0].plot(np.linspace(start_nm,end_nm,endmembers.shape[0]),endmembers[:,order[i]],label=f"Spectrum {i}", linestyle=line[0], lw=line[1])
+        line = lines[i % 3]
+        ax[0].plot(np.linspace(start_nm, end_nm, endmembers.shape[0]), endmembers[:, order[i]], 
+                   label=f"Spectrum {i}", linestyle=line[0], lw=line[1])
         ax[0].set_xlabel('Wavelength [nm]')
     ax[0].legend()
     
+    # Set up shared normalization for abundance maps
+    norm = CNorm(vmin=np.min(abundances), vmax=np.max(abundances))
+    cmap = 'viridis'
+
+    # Plot abundance maps
     for i in range(count):
-        ax.append(fig.add_subplot(gs[1+int(i/5),i%5]))
-        abundance_map = abundances[order[i]].T.reshape(shape[0],shape[1],-1)
-        #min_val = np.min(abundance_map[abundance_map > 0.001])  # Smallest non-zero value
-        #max_val = np.max(abundance_map)
-        #cax = ax[i+1].imshow(abundance_map, interpolation='none', norm=LogNorm(vmin=0.001, vmax=1), cmap='viridis')
-        cax = ax[i+1].imshow(abundance_map, interpolation='none', cmap='viridis')
-        cbar = plt.colorbar(cax, ax=ax[i+1])
-        #ticks = np.logspace(np.log10(min_val), np.log10(max_val), num=5)
-        #cbar.set_ticks(ticks)
-        cbar.ax.minorticks_off()
-        cbar.ax.yaxis.set_major_formatter(FuncFormatter(scientific_notation))
-        ax[i+1].set_title(f"Spectrum {i} abundances")
-        ax[i+1].axis('off')
+        ax.append(fig.add_subplot(gs[1 + int(i / 5), i % 5]))
+        abundance_map = abundances[order[i]].T.reshape(shape[0], shape[1], -1)
+        cax = ax[i + 1].imshow(abundance_map, interpolation='none', cmap=cmap, norm=norm)
+        ax[i + 1].set_title(f"Spectrum {i} abundances")
+        ax[i + 1].axis('off')
+    
+    # Add a single color bar at the bottom
+    cbar_ax = fig.add_subplot(gs[-1, :])  # Allocate bottom row for color bar
+    cbar = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), cax=cbar_ax, orientation='horizontal')
+    cbar.ax.xaxis.set_major_formatter(FuncFormatter(scientific_notation))
+    cbar.set_label('Abundance Intensity')
+    
+    # Finalize and save the figure
     plt.tight_layout(pad=0.1)
     plt.savefig(f"{save_path}Endmembers", bbox_inches='tight', dpi=300)
     plt.close(fig)
+
 
     
 

@@ -33,7 +33,7 @@ class simple_PPA:
         #print(energies.min())
         j = 1
         # Define a threshold for spectral similarity
-        threshold = 0.3
+        threshold = 0.1
 
         remE = [k for k in range(self.endmembers)]
         remE.remove(i)
@@ -98,7 +98,7 @@ if __name__ == "__main__":
     data_string, name = util.Get_path()
     EM = 3 #Number of endmember spectra
 
-    x_start, x_end, y_start, y_end = 0, 300, 0, 200 #Coordinates that image is cropped to
+    x_start, x_end, y_start, y_end = 0, 300, 0, 100 #Coordinates that image is cropped to
     pix_coords = [x_start,x_end,y_start,y_end]
     size = (x_end-x_start, y_end-y_start)
 
@@ -107,7 +107,7 @@ if __name__ == "__main__":
     arr = plot.Normalize(arr)
     flat = arr.reshape(arr.shape[0]*arr.shape[1],arr.shape[2]).T
 
-    sppa = simple_PPA(flat, EM, delta=0.15)
+    sppa = simple_PPA(flat, EM, delta=0.2)
 
     sppa.train(flat)
 

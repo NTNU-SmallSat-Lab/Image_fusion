@@ -6,4 +6,10 @@ outputs/
 .vscode/
 output_images/
 Calibration_data/
+Test/
 Runs.csv
+*.png
+results
+results.txt
+RGB_mask_test.txt
+Test.py

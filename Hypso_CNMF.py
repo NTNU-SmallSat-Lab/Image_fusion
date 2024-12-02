@@ -1,15 +1,20 @@
 import numpy as np
+from pathlib import Path
 from Plotting import save_final_image, save_endmembers_many, Normalize, save_endmembers_few
 import utilities as util
 import os
 from CNMF import CNMF, Get_VCA
 import loader as ld
 import time
-import PPA_NMF as ppa
+import CPPA as ppa
 
 class Fusion:
-        def __init__(self): #Too many class variables, those initialised in config file need to be clearly present
-                self.data_string, self.name = util.Get_path()
+        def __init__(self, name = ""): #Too many class variables, those initialised in config file need to be clearly present'
+                if name == "":
+                        self.data_string, self.name = util.Get_path()
+                else:
+                        self.name = name
+                        self.data_string = Path(f"C:/Users/phili/Desktop/Image_fusion/data/{self.name}.nc")
                 self.read_config()
                 self.pix_coords = [self.x_start,self.x_end,self.y_start,self.y_end]
                 self.loops = (self.inner_loops, self.outer_loops)
@@ -124,6 +129,18 @@ class Fusion:
                         for key, value in self.Variable_values.items():
                                 file.write(f"{key}: {value}\n")
                                 
+def run(name):
+    HSI_fusion = Fusion(name)
+    HSI_fusion.fuse()
+    HSI_fusion.log_run()
+    ab_avg = np.abs(np.mean(np.sum(HSI_fusion.abundances, axis = 0)))
+    
+    # Prepare the line to append
+    result_line = f"{name}, {HSI_fusion.delta}, {HSI_fusion.type}, {HSI_fusion.PSNR}, {HSI_fusion.spectral_error}, {HSI_fusion.runtime}, {ab_avg}\n"
+    
+    # Append to the results file
+    with open("results", "a") as results_file:
+        results_file.write(result_line)                          
 
 if __name__ == "__main__":
         HSI_fusion = Fusion()
