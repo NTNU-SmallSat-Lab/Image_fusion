@@ -6,14 +6,18 @@ from matplotlib.ticker import FuncFormatter
 from matplotlib.colors import Normalize as CNorm
 
 def save_spec_error(data1, data2, ax):
-    levels = np.loadtxt("RGB_mask.txt")*100
+    levels1 = np.loadtxt("RGB_mask_test1.txt")*100
+    levels2 = np.loadtxt("RGB_mask_test2.txt")*100
     spec_error = util.calculate_psnr(data1,data2,axis=(0,1))
     ax2 = ax.twinx()
     start_nm, end_nm = util.band_to_wavelength(4)[0].astype(int), util.band_to_wavelength(116)[1].astype(int)
     ax.plot(np.linspace(start_nm,end_nm,data1.shape[2]),spec_error, linestyle='-', label='Spectral error sum', color='orange')
-    ax2.plot(np.linspace(start_nm,end_nm,end_nm-start_nm),levels[start_nm:end_nm, 0], linestyle='dotted', color='red')
-    ax2.plot(np.linspace(start_nm,end_nm,end_nm-start_nm),levels[start_nm:end_nm, 1], linestyle='dotted', color='green')
-    ax2.plot(np.linspace(start_nm,end_nm,end_nm-start_nm),levels[start_nm:end_nm, 2], linestyle='dotted', color='blue')
+    ax2.plot(np.linspace(start_nm,end_nm,end_nm-start_nm),levels1[start_nm:end_nm, 0], linestyle='solid', color='red')
+    ax2.plot(np.linspace(start_nm,end_nm,end_nm-start_nm),levels1[start_nm:end_nm, 1], linestyle='solid', color='green')
+    ax2.plot(np.linspace(start_nm,end_nm,end_nm-start_nm),levels1[start_nm:end_nm, 2], linestyle='solid', color='blue')
+    ax2.plot(np.linspace(start_nm,end_nm,end_nm-start_nm),levels2[start_nm:end_nm, 0], linestyle='dotted', color='red')
+    ax2.plot(np.linspace(start_nm,end_nm,end_nm-start_nm),levels2[start_nm:end_nm, 1], linestyle='dotted', color='green')
+    ax2.plot(np.linspace(start_nm,end_nm,end_nm-start_nm),levels2[start_nm:end_nm, 2], linestyle='dotted', color='blue')
     ax.set_xlabel('Wavelength [nm]')
     ax.set_ylabel('Peak SNR [dB]')
     ax2.set_ylabel('Quantum efficiency [%]')
@@ -63,7 +67,7 @@ def save_final_image(Original: np.array, downscaled: np.array, Upscaled: np.arra
     fig = plt.figure(figsize=(8,15))
     gs = fig.add_gridspec(3,2)
     single_band = True
-    display_band = 105
+    display_band = 50
     if single_band:
         input = Normalize(Original[:,:,display_band])
         output = Normalize(Upscaled[:,:,display_band])

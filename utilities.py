@@ -67,9 +67,12 @@ def save_RGB(data, name):
 
 def Downsample(data: np.array, sigma=1, downsampling_factor=2) -> np.array:
     assert (data.shape[0]%downsampling_factor == 0) and (data.shape[1]%downsampling_factor == 0), "Resolution must be whole multiple of downsample factor"
+    print(f"Original size: {data.shape[0:2]}")
     blurred = gaussian_filter(data, sigma=(sigma, sigma, 0), mode='reflect')
+    print(f"Blurred size: {blurred.shape[0:2]}")
     lowres_downsampled = np.zeros(shape=(int(data.shape[0]/downsampling_factor),int(data.shape[1]/downsampling_factor),data.shape[2]))
     lowres_downsampled[:,:,:] = blurred[::downsampling_factor,::downsampling_factor,:]
+    print(f"Lowres size: {lowres_downsampled.shape[0:2]}")
     return lowres_downsampled
 
 def Gen_downsampled_spatial(downsampling_factor, size) -> np.array:
@@ -87,8 +90,9 @@ def Gen_downsampled_spatial(downsampling_factor, size) -> np.array:
                     spat_y = (i * downsampling_factor + k) * size[1] + (j * downsampling_factor + l)
                     
                     # Assign the value (normalized by downsampling factor)
+                    #spatial_transform[spat_x, spat_y] = (1 / (downsampling_factor**2))*np.random.normal(1, 0.5)
                     spatial_transform[spat_x, spat_y] = 1 / (downsampling_factor**2)
-            
+    
     return spatial_transform.astype(np.float64)
 
 def Gen_spectral(rgb, bands, spectral_spread) -> np.array:

@@ -19,19 +19,24 @@ class Fusion:
                 self.pix_coords = [self.x_start,self.x_end,self.y_start,self.y_end]
                 self.loops = (self.inner_loops, self.outer_loops)
                 self.full_arr = ld.load_l1b_cube(self.data_string)
+                offset = 0 #ONLY USED FOR TESTING SPATIAL ERROR
                 if self.remove_darkest:
                         self.arr = Normalize(util.remove_darkest(self.full_arr[self.x_start:self.x_end,self.y_start:self.y_end,:]), min=1E-6, max=1.0)
+                        self.offset_arr = Normalize(util.remove_darkest(self.full_arr[self.x_start+offset:self.x_end+offset,self.y_start+offset:self.y_end+offset,:]), min=1E-6, max=1.0)
                 else:
                         self.arr = Normalize(self.full_arr[self.x_start:self.x_end,self.y_start:self.y_end,:], min=1E-6, max=1.0)
+                        self.offset_arr = Normalize(self.full_arr[self.x_start+offset:self.x_end+offset,self.y_start+offset:self.y_end+offset,:], min=1E-6, max=1.0)
                 self.size = (self.x_end-self.x_start,self.y_end-self.y_start)
-                self.lowres_downsampled = util.Downsample(self.arr, sigma=self.sigma, downsampling_factor=self.downsample_factor)
+                self.lowres_downsampled = util.Downsample(self.offset_arr, sigma=self.sigma, downsampling_factor=self.downsample_factor)
                 if self.type == "CNMF":
                         self.w_init = Get_VCA(self.lowres_downsampled, self.endmember_n)
                         self.h_init = np.ones(shape=(self.endmember_n, self.lowres_downsampled.shape[0]*self.lowres_downsampled.shape[1]))
                 self.spatial_transform_matrix = util.Gen_downsampled_spatial(self.downsample_factor,self.size).transpose()
-                rgb_mask = np.loadtxt(self.rgb_mask)
+                rgb_mask = np.loadtxt(self.rgb_mask_gen)
                 self.spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],112)
                 self.rgb_representation = np.matmul(self.arr,self.spectral_response_matrix.T)
+                rgb_mask = np.loadtxt(self.rgb_mask)
+                self.spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],112)
                         
         def read_config(self):
                 with open("config.txt", 'r') as file:

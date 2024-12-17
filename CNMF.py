@@ -46,10 +46,6 @@ def CNMF(HSI_data: np.array,
     w_m[:-1,:] = delta*np.matmul(spectral_response, w[:-1,:])
     h_h = h_init
 
-    """
-    TODO consider sparsity enforcement with masks that push values to 0 if near, and ensure that division by 0 is unproblematic
-    """
-
     #STEP 1a
     w[:-1,:] = delta*w_init
     CheckMat(np.matmul(w,h_h),"w*h_h", zero=True)
