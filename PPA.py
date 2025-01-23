@@ -42,7 +42,8 @@ class simple_PPA:
         pixel_spectrum = data[:, sor_eng[j]]
 
         # Check if the pixel spectrum is too similar to any existing spectra
-        in_group = np.any([euclidean(pixel_spectrum, self.w[:, j]) < threshold for j in remE])
+        in_group = np.any([euclidean(pixel_spectrum, 
+                                     self.w[:, j]) < threshold for j in remE])
 
         while in_group:
             if j == data.shape[1] - 1:  # Break if at the last pixel
@@ -51,7 +52,8 @@ class simple_PPA:
             pixel_spectrum = data[:, sor_eng[j]]  # Get the next ranked spectrum
 
             # Check similarity again with the updated spectrum
-            in_group = np.any([euclidean(pixel_spectrum, self.w[:, j]) < threshold for j in remE])
+            in_group = np.any([euclidean(pixel_spectrum, 
+                                         self.w[:, j]) < threshold for j in remE])
 
         # If the selected spectrum has sufficient energy, assign it
         if energies[sor_eng[j]] < 0:
@@ -68,7 +70,8 @@ class simple_PPA:
         data_e = np.ones(shape=(data.shape[0]+1,data.shape[1]))
         data_e[:-1,:] = self.delta*data
 
-        S = np.array([opt.nnls(w_e, i, maxiter=5000)[0] for i in data_e.T], dtype=np.float64).transpose()
+        S = np.array([opt.nnls(w_e, i, maxiter=5000)[0] for i in data_e.T], 
+                     dtype=np.float64).transpose()
         self.h = (S + self.h)/2
     
     def obj(self, data):
