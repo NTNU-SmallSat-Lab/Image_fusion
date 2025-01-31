@@ -3,10 +3,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
-def align_and_overlay(hsi_path, rgb_path, output_path):
+def align_and_overlay(hsi_path, rgb_path, output_path): #TODO rewrite this to crop and recalculate transform to only include active area
     hsi_img = cv2.imread(hsi_path, cv2.IMREAD_GRAYSCALE)
     rgb_img = cv2.imread(rgb_path, cv2.IMREAD_GRAYSCALE)
-    
     rgb_img = cv2.GaussianBlur(rgb_img, (15, 15), 0)
 
     cv2.imwrite(f"{output_path}rgb.png", rgb_img)
@@ -60,11 +59,51 @@ def align_and_overlay(hsi_path, rgb_path, output_path):
     overlay_img = cv2.addWeighted(hsi_img, 0.5, aligned_rgb, 0.5, 0)
     
     cv2.imwrite(f"{output_path}overlay.png", overlay_img)
+    return M
     
-def generate_full_spatial(hsi_dim, rgb_dim, transformation):
+def generate_full_spatial(hsi_dim,rgb_dim, transformation):
+    """Heavy function that generates source map for each HSI pixel. The idea being that the heavy lifting
+        will only be performed once, then the source map can be accessed quickly for each patch during fusion.
+
+    Args:
+        hsi_dim (tuple): hsi_dimensions
+        rgb_dim (tuple): rgb_dimensions
+        transformation (np.array): homogeneous transformation matrix (3,3)
+    """
+    #Dest maps where each RGB pixel is mapped on HSI, for example Dest[250, 250] = [2045, 145]
+    #Indicates that RGB pixel (250,250) is spatially equivelent to HSI pixel (2045, 145)
+    #For the moment these are being brute forced into specific pixels using Int() THIS SHOULD BE FIXED
+    Dest = np.zeros(shape=(rgb_dim[0], rgb_dim[1], 2), dtype=np.int16)
+    n_pixel = 24
+    Source = np.full(shape=(hsi_dim[0], hsi_dim[1], n_pixel, 2), dtype=np.int16, fill_value=np.nan)
     for i in range(rgb_dim[0]):
         for j in range(rgb_dim[1]):
-            hsi_coords = np.array[i, j, 1]
+            Destcoord = transformation@np.array([i, j, 1])
+            Dest[i,j,:] = np.array([int(Destcoord[0]),int(Destcoord[1])])
+            if 0 <= int(Destcoord[0]) < hsi_dim[0] and 0 <= int(Destcoord[1]) < hsi_dim[1]:
+                k = 0
+                #print(int(Destcoord[0]),int(Destcoord[1]))
+                while Source[int(Destcoord[0]),int(Destcoord[1]),k,0] != -1:
+                    k += 1
+                    assert k < (n_pixel), "Array size inadequate"
+                Source[int(Destcoord[0]),int(Destcoord[1]),k,:] = np.array([i,j])
+    
+    return Source
+
+def generate_spatial_subset(area_of_interest, full_transform):
+    subtransform = full_transform[area_of_interest[0]:area_of_interest[1],area_of_interest[2]:area_of_interest[3],:,:]
+    rgb_x = np.max(subtransform[:,:,:,0])-np.min(subtransform[:,:,:,0])
+    rgb_y = np.max(subtransform[:,:,:,1])-np.min(subtransform[:,:,:,1])
+    
+    hsi_x = area_of_interest[1] - area_of_interest[0]
+    hsi_y = area_of_interest[3] - area_of_interest[2]    
+    
+    transform_array = np.zeros(shape=(rgb_x*rgb_y,hsi_x*hsi_y))
+    
+    for i in range(subtransform.shape[0]):
+        for j in range(subtransform.shape[1]):
+            pass
+
     
 if __name__ == "__main__":
     hsi_path = "input/HSI.png"
@@ -72,4 +111,5 @@ if __name__ == "__main__":
     output_path = "output/"
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-    align_and_overlay(hsi_path=hsi_path, rgb_path=rgb_path, output_path=output_path)
+    transform = align_and_overlay(hsi_path=hsi_path, rgb_path=rgb_path, output_path=output_path)
+    Source = generate_full_spatial((4784,1092),(3840,2748), transform)

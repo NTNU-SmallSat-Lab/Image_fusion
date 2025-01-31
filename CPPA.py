@@ -1,9 +1,5 @@
 import numpy as np
-from VCA_master.VCA import vca
-from utilities import Cost
-import loader as ld
-from Plotting import Normalize
-from PPA import get_PPA, simple_PPA
+from PPA import simple_PPA
 
 def CPPA(HSI_data: np.array, 
          MSI_data: np.array, 
@@ -36,7 +32,14 @@ def CPPA(HSI_data: np.array,
     h_ppa = simple_PPA(data=h_flat, delta=delta, n=endmembers)
     m_ppa = simple_PPA(data=m_flat, delta=delta, n=endmembers)
 
-    w, h = main_loop(h_ppa, m_ppa, h_flat, m_flat, spectral_response, spatial_transform, loops[1], tol)
+    w, h = main_loop(h_ppa, 
+                     m_ppa, 
+                     h_flat, 
+                     m_flat, 
+                     spectral_response, 
+                     spatial_transform, 
+                     loops[1], 
+                     tol)
     out_flat = np.matmul(w,h)
     #out = Normalize(out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands), min=1E-6, max=1.0)
     out = out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands)

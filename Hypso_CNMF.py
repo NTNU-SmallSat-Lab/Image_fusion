@@ -9,7 +9,7 @@ import time
 import CPPA as ppa
 
 class Fusion:
-        def __init__(self, name = ""): #Too many class variables, those initialised in config file need to be clearly present'
+        def __init__(self, name = ""):
                 if name == "":
                         self.data_string, self.name = util.Get_path()
                 else:

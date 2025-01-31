@@ -32,14 +32,15 @@ def CNMF(HSI_data: np.array,
 
     precision = np.float64
     h_bands, m_bands = HSI_data.shape[2], MSI_data.shape[2]
-
-    #Flatten arrays, add sum-to-one requirement
-    h_flat, m_flat = np.ones(shape=(HSI_data.shape[0]*HSI_data.shape[1],h_bands+1)).T, np.ones(shape=(MSI_data.shape[0]*MSI_data.shape[1],m_bands+1)).T
-    h_flat[:-1,:], m_flat[:-1,:] = delta*HSI_data.reshape(HSI_data.shape[0]*HSI_data.shape[1],h_bands).T, delta*MSI_data.reshape(-1,m_bands).T
+    
+    h_flat = np.ones(shape=(HSI_data.shape[0]*HSI_data.shape[1],h_bands+1)).T
+    m_flat = np.ones(shape=(MSI_data.shape[0]*MSI_data.shape[1],m_bands+1)).T
+    
+    h_flat[:-1,:] = delta*HSI_data.reshape(-1,h_bands).T
+    m_flat[:-1,:] = delta*MSI_data.reshape(-1,m_bands).T
 
     w = np.ones(shape=(h_bands+1,endmembers),dtype=precision)
 
-    #h = np.ones(shape=(endmembers,m_flat.shape[1]),dtype=precision)/endmembers
     h = np.ones(shape=(endmembers,m_flat.shape[1]),dtype=precision)/endmembers
     
     w_m = np.ones(shape=(spectral_response.shape[0]+1,w.shape[1]))
@@ -71,7 +72,7 @@ def CNMF(HSI_data: np.array,
         #STEP 2a
         w_m[:-1,:] = np.matmul(spectral_response, w[:-1,:])
         w_m[-1,:] = np.ones_like(w_m[-1,:])
-        h = h*np.matmul(w_m.transpose(),m_flat)/np.matmul(w_m.transpose(),np.matmul(w_m,h)) #Loop?
+        h = h*np.matmul(w_m.transpose(),m_flat)/np.matmul(w_m.transpose(),np.matmul(w_m,h))
         done_i = False
         count_i = 0
         last_i = 1E-15
@@ -79,7 +80,7 @@ def CNMF(HSI_data: np.array,
             #STEP 2b
             w_m = w_m*np.matmul(m_flat,h.transpose())/np.matmul(w_m,np.matmul(h,h.transpose()))
             w_m[-1,:] = np.ones_like(w_m[-1,:])
-            h = h*np.matmul(w_m.transpose(),m_flat)/np.matmul(w_m.transpose(),np.matmul(w_m,h))#Loop?
+            h = h*np.matmul(w_m.transpose(),m_flat)/np.matmul(w_m.transpose(),np.matmul(w_m,h))
             cost = Cost(m_flat[:-1,:], np.matmul(w_m[:-1,:],h))
             count_i += 1
             if abs((last_i-cost)/last_i) < tol:
@@ -94,7 +95,7 @@ def CNMF(HSI_data: np.array,
         #Step 3a
         w[-1,:] = np.ones_like(w[-1,:])
         h_h = np.matmul(h,spatial_transform)
-        w = w*np.matmul(h_flat,h_h.transpose())/np.matmul(w,np.matmul(h_h,h_h.transpose()))#Loop?
+        w = w*np.matmul(h_flat,h_h.transpose())/np.matmul(w,np.matmul(h_h,h_h.transpose()))
         while done_i != True:
             #STEP 3b
             w[-1,:] = np.ones_like(w[-1,:]) 
@@ -112,9 +113,6 @@ def CNMF(HSI_data: np.array,
         if count_o >= i_out :
             done_o = True
 
-        """print(f"Mean h per pixel sum: {np.mean(np.sum(h, axis=0))}")
-        print(f"Max h per pixel sum: {np.max(np.sum(h, axis=0))}")
-        print(f"Min h per pixel sum: {np.min(np.sum(h, axis=0))}")"""
     out_flat = np.matmul(w[:-1,:],h)
     out = Normalize(out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands), min=1E-6, max=1.0)
     return out, w[:-1,:], h
