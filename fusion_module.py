@@ -7,28 +7,37 @@ from CNMF import CNMF, Get_VCA
 import loader as ld
 import time
 import CPPA as ppa
-
+from spatial_transform import full_transform, get_pixels
+import json
+import cv2
 
 class Fusion:
-        def __init__(self, name = ""):
+        def __init__(self, name = ""): #THIS IS A BAD INIT FUNCTION
                 if name == "":
-                        self.data_string, self.name = util.Get_path()
+                        self.data_string, self.name = util.Get_path("l1b file")
                 else:
                         self.name = name
                         self.data_string = Path(f"C:/Users/phili/Desktop/Image_fusion/data/{self.name}.nc")
                 self.read_config()
-                self.pix_coords = [self.x_start,self.x_end,self.y_start,self.y_end]
-                self.loops = (self.inner_loops, self.outer_loops)
                 self.full_arr = ld.load_l1b_cube(self.data_string)
-                offset = 0 #ONLY USED FOR TESTING SPATIAL ERROR
+                rgb_path = str(self.data_string).replace("16Z-l1b.nc", "14.png")
+                self.rgb_img = cv2.normalize(cv2.imread(rgb_path, cv2.IMREAD_GRAYSCALE), None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
+                meta_path = str(self.data_string).replace("l1a.nc", "meta.json")
+
+                with open(meta_path, 'r') as file:
+                        metadata = json.load(file)
+                dx = metadata.get('gsd_along')/metadata.get('gsd_across')
+                self.flip = True
+                self.active_area, self.transform = full_transform(self.rgb_img, self.full_arr)
+                self.full_arr = self.full_arr[self.active_area[0]:self.active_area[1],self.active_area[2]:self.active_area[3]]
+                self.loops = (self.inner_loops, self.outer_loops)
                 if self.remove_darkest:
                         self.arr = Normalize(util.remove_darkest(self.full_arr[self.x_start:self.x_end,self.y_start:self.y_end,:]), min=1E-6, max=1.0)
-                        self.offset_arr = Normalize(util.remove_darkest(self.full_arr[self.x_start+offset:self.x_end+offset,self.y_start+offset:self.y_end+offset,:]), min=1E-6, max=1.0)
+                        self.offset_arr = Normalize(util.remove_darkest(self.full_arr[self.x_start:self.x_end,self.y_start:self.y_end,:]), min=1E-6, max=1.0)
                 else:
                         self.arr = Normalize(self.full_arr[self.x_start:self.x_end,self.y_start:self.y_end,:], min=1E-6, max=1.0)
-                        self.offset_arr = Normalize(self.full_arr[self.x_start+offset:self.x_end+offset,self.y_start+offset:self.y_end+offset,:], min=1E-6, max=1.0)
-                self.size = (self.x_end-self.x_start,self.y_end-self.y_start)
-                self.lowres_downsampled = util.Downsample(self.offset_arr, sigma=self.sigma, downsampling_factor=self.downsample_factor)
+                        self.offset_arr = Normalize(self.full_arr[self.x_start:self.x_end,self.y_start:self.y_end,:], min=1E-6, max=1.0)
+                self.size = (self.active_area[1]-self.active_area[0],self.active_area[3]-self.active_area[2])
                 if self.type == "CNMF":
                         self.w_init = Get_VCA(self.lowres_downsampled, self.endmember_n)
                         self.h_init = np.ones(shape=(self.endmember_n, self.lowres_downsampled.shape[0]*self.lowres_downsampled.shape[1]))

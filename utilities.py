@@ -39,18 +39,18 @@ def band_to_wavelength(band: int):
     return (wavelengths[band],wavelengths[band+1])
     
 
-def Get_path():
+def Get_path(filetype: str):
         # Initialize Tkinter and hide the main window
         root = Tk()
         root.withdraw()
 
         # Open the file explorer and allow the user to select a file
-        file_path_input = askopenfilename(title="Select a file", initialdir=Path.cwd())
+        file_path_input = askopenfilename(title=f"Select {filetype} file", initialdir=Path.cwd())
 
         # Initialize a Path object
         file_path = Path(file_path_input)
         name = file_path.stem
-        return file_path, name
+        return file_path, name[:-4]
 
 def Get_subset(path, size, subset) -> np.array:
         flattened_array = np.loadtxt(fname=path)
