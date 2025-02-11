@@ -12,42 +12,63 @@ import json
 import cv2
 
 class Fusion:
-        def __init__(self, name = ""): #THIS IS A BAD INIT FUNCTION
+        def __init__(self, name = ""): #THIS IS still A BAD INIT FUNCTION
                 if name == "":
                         self.data_string, self.name = util.Get_path("l1b file")
                 else:
                         self.name = name
                         self.data_string = Path(f"C:/Users/phili/Desktop/Image_fusion/data/{self.name}.nc")
                 self.read_config()
-                self.full_arr = ld.load_l1b_cube(self.data_string)
-                rgb_path = str(self.data_string).replace("16Z-l1b.nc", "14.png")
-                self.rgb_img = cv2.normalize(cv2.imread(rgb_path, cv2.IMREAD_GRAYSCALE), None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
-                meta_path = str(self.data_string).replace("l1a.nc", "meta.json")
+                self.flip = True
+                self.patch_size = 20
+                rgb_mask = np.loadtxt(self.rgb_mask)
+                self.spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],112)
+                self.loops = (self.inner_loops, self.outer_loops)
+                self.load_images()
+                if self.remove_darkest:
+                        self.arr = cv2.normalize(util.remove_darkest(self.full_arr), None, 0, 255, cv2.NORM_MINMAX)
+                else:
+                        self.arr = cv2.normalize(self.full_arr, None, 0, 255, cv2.NORM_MINMAX)
+                self.get_transform()
+                if self.type == "CNMF":
+                        self.w_init = Get_VCA(self.lowres_downsampled, self.endmember_n)
+                        self.h_init = np.ones(shape=(self.endmember_n, self.lowres_downsampled.shape[0]*self.lowres_downsampled.shape[1]))
+        
+        def load_images(self):
+                normalized = cv2.normalize(ld.load_l1b_cube(self.data_string), None, 0, 255, cv2.NORM_MINMAX)
+                normalized = np.uint8(normalized)  # Convert to uint8 for saving
+                rgb_path = str(self.data_string).replace("-", "_")
+                rgb_path = str(rgb_path).replace("16Z_l1b.nc", "14.png")
+                self.rgb_img = np.uint8(cv2.normalize(cv2.imread(rgb_path, cv2.IMREAD_GRAYSCALE), None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX))
+                if self.flip:
+                        self.rgb_img = cv2.flip(self.rgb_img,1)
+                meta_path = str(self.data_string).replace("l1b.nc", "meta.json")
 
                 with open(meta_path, 'r') as file:
                         metadata = json.load(file)
                 dx = metadata.get('gsd_along')/metadata.get('gsd_across')
-                self.flip = True
-                self.active_area, self.transform = full_transform(self.rgb_img, self.full_arr)
-                self.full_arr = self.full_arr[self.active_area[0]:self.active_area[1],self.active_area[2]:self.active_area[3]]
-                self.loops = (self.inner_loops, self.outer_loops)
-                if self.remove_darkest:
-                        self.arr = Normalize(util.remove_darkest(self.full_arr[self.x_start:self.x_end,self.y_start:self.y_end,:]), min=1E-6, max=1.0)
-                        self.offset_arr = Normalize(util.remove_darkest(self.full_arr[self.x_start:self.x_end,self.y_start:self.y_end,:]), min=1E-6, max=1.0)
+                
+                height, width = normalized.shape[:2]
+
+                if dx < 1:
+                        scale_factor = 1.0 / dx
+                        new_width = int(width * scale_factor)
+                        new_height = height
                 else:
-                        self.arr = Normalize(self.full_arr[self.x_start:self.x_end,self.y_start:self.y_end,:], min=1E-6, max=1.0)
-                        self.offset_arr = Normalize(self.full_arr[self.x_start:self.x_end,self.y_start:self.y_end,:], min=1E-6, max=1.0)
-                self.size = (self.active_area[1]-self.active_area[0],self.active_area[3]-self.active_area[2])
-                if self.type == "CNMF":
-                        self.w_init = Get_VCA(self.lowres_downsampled, self.endmember_n)
-                        self.h_init = np.ones(shape=(self.endmember_n, self.lowres_downsampled.shape[0]*self.lowres_downsampled.shape[1]))
-                self.spatial_transform_matrix = util.Gen_downsampled_spatial(self.downsample_factor,self.size).transpose()
-                rgb_mask = np.loadtxt(self.rgb_mask_gen)
-                self.spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],112)
-                self.rgb_representation = np.matmul(self.arr,self.spectral_response_matrix.T)
-                rgb_mask = np.loadtxt(self.rgb_mask)
-                self.spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],112)
-                        
+                        scale_factor = dx
+                        new_width = width
+                        new_height = int(height * scale_factor)
+                
+                self.full_arr = cv2.resize(normalized, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+                rgb = np.uint8(cv2.normalize(self.full_arr@self.spectral_response_matrix.T, None, 0, 255, cv2.NORM_MINMAX))
+                self.rgb_grayscale = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+
+                
+                
+        def get_transform(self):
+                self.active_area, self.transform = full_transform(self.rgb_img, self.rgb_grayscale)
+                self.full_arr = self.full_arr[self.active_area[0]:self.active_area[1],self.active_area[2]:self.active_area[3]].copy()
+                  
         def read_config(self):
                 with open("config.txt", 'r') as file:
                         for line in file:
@@ -68,38 +89,34 @@ class Fusion:
                                         except ValueError:
                                                 setattr(self, key, value)
         
-        def fuse(self):
-                start_time = time.time()
+        def fuse(self, HSI_patch, RGB_patch, spatial_transform):
                 if self.type == "PPA":
-                        self.Upscaled_datacube, self.endmembers, self.abundances = ppa.CPPA(HSI_data = self.lowres_downsampled, 
-                                                                                            MSI_data= self.rgb_representation, 
-                                                                                            spatial_transform= self.spatial_transform_matrix, 
+                        upscaled_patch, patch_endmembers, patch_abundances = ppa.CPPA(HSI_data = HSI_patch, 
+                                                                                            MSI_data= RGB_patch, 
+                                                                                            spatial_transform= spatial_transform, 
                                                                                             spectral_response= self.spectral_response_matrix, 
                                                                                             delta= self.delta, 
                                                                                             endmembers= self.endmember_n,
                                                                                             loops= self.loops,
                                                                                             tol= self.tol)
                 elif self.type == "CNMF":
-                        self.Upscaled_datacube, self.endmembers, self.abundances = CNMF(self.lowres_downsampled, 
-                                                                                            self.rgb_representation, 
-                                                                                            self.spatial_transform_matrix, 
-                                                                                            self.spectral_response_matrix,
-                                                                                            self.w_init, 
-                                                                                            self.h_init,
-                                                                                            self.delta, 
-                                                                                            self.endmember_n,
-                                                                                            self.loops,
-                                                                                            self.tol)
+                        upscaled_patch, patch_endmembers, patch_abundances = CNMF(HSI_data = HSI_patch, 
+                                                                                            MSI_data= RGB_patch, 
+                                                                                            spatial_transform= spatial_transform, 
+                                                                                            spectral_response= self.spectral_response_matrix,
+                                                                                            w_init=self.w_init, 
+                                                                                            h_init=self.h_init,
+                                                                                            delta= self.delta, 
+                                                                                            endmembers= self.endmember_n,
+                                                                                            loops= self.loops,
+                                                                                            tol= self.tol)
                 else:
                         raise ValueError(f"{self.type} is not a fusion method")
                 if np.abs(np.mean(np.sum(self.abundances, axis = 0))-1) > 1e-1:
                         self.delta = self.delta*0.5
                         print(f"Abundances outside of allowed values, reducing delta to {self.delta}")
                         self.fuse()
-                self.mean_spatial_error = np.mean(np.abs(self.arr - self.Upscaled_datacube))
-                self.spectral_error = util.mean_spectral_angle(self.arr, self.Upscaled_datacube)
-                self.PSNR = util.calculate_psnr(self.arr, self.Upscaled_datacube)
-                self.runtime = time.time()-start_time
+                return upscaled_patch, patch_endmembers, patch_abundances
         
         def log_run(self):
                 self.save_path = f"outputs\\{self.type}_{self.name}_{self.x_start}-{self.x_end}x_{self.y_start}-{self.y_end}y_{self.endmember_n}EM_{self.delta}d_{self.remove_darkest}RD\\"
@@ -143,6 +160,24 @@ class Fusion:
                         file.write("\nVariable Values:\n")
                         for key, value in self.Variable_values.items():
                                 file.write(f"{key}: {value}\n")
+                                
+        def fuse_image(self):
+                done = False
+                x, y = 0, 0
+                while not done:
+                        done_row = False
+                        while not done_row:
+                                x_min = x
+                                x_max = x+self.patch_size
+                                y_min = y
+                                y_max = y+self.patch_size
+                                limits = np.array([x_min, x_max, y_min, y_max])
+                                hsi_patch = self.full_arr[x_min:x_max,y_min:y_max].copy()
+                                spatial_transform, rgb_limits = get_pixels(limits, self.transform, self.rgb_img.shape)
+                                rgb_patch = self.rgb_img[rgb_limits[0]:rgb_limits[1],rgb_limits[2]:rgb_limits[3],:]
+                                upscaled_patch, patch_endmembers, patch_abundances = self.fuse(hsi_patch, rgb_patch, spatial_transform)
+                                #probably write patches directly to memory using np.memmap or something cos I aint got the RAM
+                                
                                 
 def run(name):
     HSI_fusion = Fusion(name)

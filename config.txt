@@ -21,5 +21,4 @@ tol = 1e-2
 downsample_factor = 4
 sigma = 2
 
-rgb_mask = RGB_mask_test1.txt
-rgb_mask_gen = RGB_mask_test2.txt
+rgb_mask = RGB_mask.txt

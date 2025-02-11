@@ -5,8 +5,6 @@ import os
 import utilities as util
 def align_and_overlay(hsi_img, rgb_img, output_path): #TODO rewrite this to crop and recalculate transform to only include active area
     rgb_img = cv2.GaussianBlur(rgb_img, (15, 15), 0)
-    #rgb_img = rgb_img[::3,::3]
-    rgb_img = cv2.flip(rgb_img, 1)
 
     cv2.imwrite(f"{output_path}rgb.png", rgb_img)
     cv2.imwrite(f"{output_path}hsi.png", hsi_img)
@@ -40,36 +38,31 @@ def align_and_overlay(hsi_img, rgb_img, output_path): #TODO rewrite this to crop
     src_pts = np.float32([kp_hsi[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
     dst_pts = np.float32([kp_rgb[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
 
-    M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, ransacReprojThreshold=5,confidence=0.995, maxIters=5000)
+    M, mask1 = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, ransacReprojThreshold=5,confidence=0.995, maxIters=5000)
+    N, mask2 = cv2.findHomography(dst_pts, src_pts, cv2.RANSAC, ransacReprojThreshold=5,confidence=0.995, maxIters=5000)
     
     print(M)
     
-    inliers = mask.ravel() == 1
-    outliers = mask.ravel() == 0
+    inliers = mask1.ravel() == 1
+    outliers = mask1.ravel() == 0
     # Checking how many matches are outliers
     #print(f"{np.sum(inliers)} inliers and {np.sum(outliers)} outliers")
 
     # Transform
     aligned_hsi = cv2.warpPerspective(hsi_img, M, (rgb_img.shape[1], rgb_img.shape[0]))
+    aligned_rgb = cv2.warpPerspective(rgb_img, N, (hsi_img.shape[1], hsi_img.shape[0]))
 
     # Save the aligned image
     cv2.imwrite(f"{output_path}aligned_hsi.png", aligned_hsi)
+    cv2.imwrite(f"{output_path}aligned_rgb.png", aligned_rgb)
 
     # blend images
-    overlay_img = cv2.addWeighted(rgb_img, 0.5, aligned_hsi, 0.5, 0)
+    overlay_img = cv2.addWeighted(hsi_img, 0.5, aligned_rgb, 0.5, 0)
     
     cv2.imwrite(f"{output_path}overlay.png", overlay_img)
-    return M
+    return M, N
     
-def generate_full_spatial(hsi_dim,rgb_dim, transformation):
-    """Heavy function that generates source map for each HSI pixel. The idea being that the heavy lifting
-        will only be performed once, then the source map can be accessed quickly for each patch during fusion.
-
-    Args:
-        hsi_dim (tuple): hsi_dimensions
-        rgb_dim (tuple): rgb_dimensions
-        transformation (np.array): homogeneous transformation matrix (3,3)
-    """
+"""def generate_full_spatial(hsi_dim,rgb_dim, transformation):
     #Dest maps where each RGB pixel is mapped on HSI, for example Dest[250, 250] = [2045, 145]
     #Indicates that RGB pixel (250,250) is spatially equivelent to HSI pixel (2045, 145)
     #For the moment these are being brute forced into specific pixels using Int() THIS SHOULD BE FIXED
@@ -90,7 +83,7 @@ def generate_full_spatial(hsi_dim,rgb_dim, transformation):
                     assert k < n_pixel, "Array size inadequate"
                 Source[int(Destcoord[0]),int(Destcoord[1]),k,:] = np.array([i,j])
     
-    return Source
+    return Source"""
 
 def generate_spatial_subset(area_of_interest, full_transform):
     #need to implement method to correct values from each pixel, at the moment each pixel contributes equally
@@ -148,10 +141,12 @@ def get_pixels(pixel_bounds, transformation, rgb_dim):
     origin = transformation@np.array([hsi_x_min, hsi_y_min, 1.0])
     extent = transformation@np.array([hsi_x_max, hsi_y_max, 1.0])
     
-    rgb_x_min, rgb_x_max = int(np.floor(origin[0])), int(np.ceil(extent[0]))
-    rgb_y_min, rgb_y_max = int(np.floor(origin[1])), int(np.ceil(extent[1]))
+    rgb_x_min, rgb_x_max = int(np.max([0, np.floor(origin[0])])), int(np.min([rgb_dim[0], np.ceil(extent[0])]))
+    rgb_y_min, rgb_y_max = int(np.max([0, np.floor(origin[1])])), int(np.min([rgb_dim[1], np.ceil(extent[1])]))
     
     rgb_x, rgb_y = rgb_x_max-rgb_x_min, rgb_y_max-rgb_y_min
+    
+    rgb_limits = np.array([rgb_x_min, rgb_x_max, rgb_y_min, rgb_y_max])
     
     hsi_pixels = hsi_x*hsi_y
     rgb_pixels = rgb_x*rgb_y
@@ -172,24 +167,34 @@ def get_pixels(pixel_bounds, transformation, rgb_dim):
     
     normalization_weights = np.sum(transform, axis=0)
     transform = transform/normalization_weights
-    return transform
+    return transform, rgb_limits
     
-def full_transform(rgb_img, HSI_datacube):
-    rgb_mask = np.loadtxt("RGB_mask.txt")
-    spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],112)
-    hsi_img = np.matmul(HSI_datacube,spectral_response_matrix.T)
-    hsitorgb = align_and_overlay(hsi_img, rgb_img)
-    rgbtohsi = cv2.invert(hsitorgb)
-    origin = rgbtohsi@np.array([0, 0, 1.0])
-    extent = rgbtohsi@np.array([rgb_img.shape[0], rgb_img.shape[1], 1.0])
-    x_min = np.clip(origin[0], a_min=0.0, a_max=hsi_img.shape[0]) #this still assumes entire bounded square is defined
-    x_max = np.clip(extent[0], a_min=0.0, a_max=hsi_img.shape[0])
-    y_min = np.clip(origin[1], a_min=0.0, a_max=hsi_img.shape[1])
-    y_max = np.clip(extent[1], a_min=0.0, a_max=hsi_img.shape[1])
-    hsi_img = hsi_img[x_min:x_max, y_min:y_max]
-    transform = align_and_overlay(hsi_img, rgb_img) #lazy solution
-    active_area = np.array([x_min, x_max, y_min, y_max])
-    return active_area, transform
+def full_transform(rgb_img, hsi_img):
+    transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/")
+    overlap_points = find_overlap(hsi_img.shape[:2],rgb_img.shape[:2],transform_r2h)
+    x_min, x_max = np.min(overlap_points[:,1]), np.max(overlap_points[:,1])-1
+    y_min, y_max = np.min(overlap_points[:,0]), np.max(overlap_points[:,0])-1
+    hsi_img = hsi_img[x_min:x_max,y_min:y_max]
+    transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/") #lazy solution, translation affects projective numbers
+    return np.array([x_min,x_max,y_min,y_max]), transform_h2r
+
+def find_overlap(HSI_dim, RGB_dim, transform):
+    HSI_corners = np.array([
+        [0, 0],
+        [HSI_dim[1], 0],           # use width for x coordinate
+        [HSI_dim[1], HSI_dim[0]],    # width for x, height for y
+        [0, HSI_dim[0]]
+    ]).astype(np.float32)
+    RGB_corners = np.array([
+        [0,0],
+        [RGB_dim[1],0],
+        [RGB_dim[1],RGB_dim[0]],
+        [0,RGB_dim[0]]
+    ]).astype(np.float32)
+    RGB_corners_warped = cv2.perspectiveTransform(RGB_corners.reshape(-1, 1, 2), transform).reshape(-1, 2)
+    retval, intersection = cv2.intersectConvexConvex(HSI_corners, RGB_corners_warped)
+    
+    return np.round(intersection.reshape(-1,2)).astype(np.int32)
     
 if __name__ == "__main__":
     #hsi_path, _ = util.Get_path("HSI image")

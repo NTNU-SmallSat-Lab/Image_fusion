@@ -104,7 +104,7 @@ def Gen_spectral(rgb, bands, spectral_spread) -> np.array:
     return spectral_response_matrix
 
 def map_mask_to_bands(mask: np.array, bands: int):
-    output = np.zeros(shape=(mask.shape[1],bands))
+    output = np.zeros(shape=(mask.shape[1],bands), dtype=np.float32)
     for i in range(mask.shape[0]):
         band = Wavelength_to_band(i)+4
         if band != -1:
@@ -199,5 +199,5 @@ def calculate_psnr(original, reconstructed, max_pixel_value=1.0, axis=None):
 def remove_darkest(data):
     data_proc = np.copy(data)
     for i in range(data.shape[2]):
-        data_proc[:,:,i] -= 0.9*np.min(data[:,:,i])
+        data_proc[:,:,i] -= int(0.9*np.min(data[:,:,i]))
     return data_proc
