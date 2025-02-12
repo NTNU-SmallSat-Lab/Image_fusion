@@ -56,6 +56,8 @@ def RGB_NNLS(PPA_obj: simple_PPA, data):
     PPA_obj.abundances_update(data)
 
 def Fuse_RGB_to_HSI(PPA_obj: simple_PPA, transform):
+    print(PPA_obj.h.shape)
+    print(transform.shape)
     return PPA_obj.h@transform
 
 def main_loop(PPA_obj_h: simple_PPA, 

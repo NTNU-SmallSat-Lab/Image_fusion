@@ -132,44 +132,29 @@ def generate_spatial_subset(area_of_interest, full_transform):
     print(transform_array)
     return transform_array
 
-def get_pixels(pixel_bounds, transformation, rgb_dim):
-    hsi_x_min, hsi_x_max = pixel_bounds[0], pixel_bounds[1]
-    hsi_y_min, hsi_y_max = pixel_bounds[2], pixel_bounds[3]
-    
-    hsi_x, hsi_y = hsi_x_max-hsi_x_min, hsi_y_max-hsi_y_min
-    
-    origin = transformation@np.array([hsi_x_min, hsi_y_min, 1.0])
-    extent = transformation@np.array([hsi_x_max, hsi_y_max, 1.0])
-    
-    rgb_x_min, rgb_x_max = int(np.max([0, np.floor(origin[0])])), int(np.min([rgb_dim[0], np.ceil(extent[0])]))
-    rgb_y_min, rgb_y_max = int(np.max([0, np.floor(origin[1])])), int(np.min([rgb_dim[1], np.ceil(extent[1])]))
-    
-    rgb_x, rgb_y = rgb_x_max-rgb_x_min, rgb_y_max-rgb_y_min
-    
-    rgb_limits = np.array([rgb_x_min, rgb_x_max, rgb_y_min, rgb_y_max])
-    
-    hsi_pixels = hsi_x*hsi_y
-    rgb_pixels = rgb_x*rgb_y
-    
-    transform = np.zeros(shape=(rgb_pixels, hsi_pixels))
-    
-    for i in range(hsi_pixels):
-        x = i%hsi_x
-        y = i//hsi_x
-        area_origin = transformation@np.array([x+hsi_x_min, y+hsi_y_min, 1.0])
-        area_extent = transformation@np.array([x+1+hsi_x_min, y+1+hsi_y_min, 1.0])
-        x_min, x_max = int(np.floor(area_origin[0]))-rgb_x_min, int(np.ceil(area_extent[0]))-rgb_x_min
-        y_min, y_max = int(np.floor(area_origin[1]))-rgb_y_min, int(np.ceil(area_extent[1]))-rgb_y_min
-        for j in range(x_max-x_min):
-            for k in range(y_max-y_min):
-                transform[j+x_min+(k+y_min)*rgb_x,i] = 1.0
-                print(f"assigning link between RGB ({j+x_min},{k+y_min}) and HSI ({x},{y})")
-    
-    normalization_weights = np.sum(transform, axis=0)
-    transform = transform/normalization_weights
-    return transform, rgb_limits
+def get_pixels(pixel_bounds, transformation, rgb_dim): #THIS WHOLE FUNCTION IS A MESS AND SHOULD PROBABLY BE REWRITTEN
+    """Finds spatial transform between HSI and RGB section.
+
+    Args:
+        pixel_bounds (np.array): point coords that define HSI active area
+        transformation (np.array): homogenous transform from HSI->RGB
+        rgb_dim (tuple): RGB (height, width) 
+
+    Returns:
+        tuple (np.array, np.array): (spatial transform, rgb active area)
+    """
+    return 0
     
 def full_transform(rgb_img, hsi_img):
+    """Finds homogenous projective transform between RGB and HSI, crops HSI to minimum size then recalculates transform.
+
+    Args:
+        rgb_img (np.array): RGB image (grayscale)
+        hsi_img (np.array): HSI image (grayscale)
+
+    Returns:
+        tuple: (active area coords, HSI->RGB transform, RGB->HSI transform)
+    """
     transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/")
     overlap_points = find_overlap(hsi_img.shape[:2],rgb_img.shape[:2],transform_r2h)
     x_min, x_max = np.min(overlap_points[:,1]), np.max(overlap_points[:,1])-1
@@ -178,7 +163,17 @@ def full_transform(rgb_img, hsi_img):
     transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/") #lazy solution, translation affects projective numbers
     return np.array([x_min,x_max,y_min,y_max]), transform_h2r
 
-def find_overlap(HSI_dim, RGB_dim, transform):
+def find_overlap(HSI_dim, RGB_dim, transform): #should probably be extended to not assume origin = (0,0)
+    """Finds points define overlap area between HSI and RGB
+
+    Args:
+        HSI_dim (tuple): (height, width) of HSI
+        RGB_dim (tuple): (height, width) of RGB
+        transform (np.array): homogenous transform from RGB to HSI coordinate system
+
+    Returns:
+        np.array: (n,2) where n is the number of points defining overlap shape, each point defined by (x,y) in HSI coordinates
+    """
     HSI_corners = np.array([
         [0, 0],
         [HSI_dim[1], 0],           # use width for x coordinate
