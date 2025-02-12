@@ -7,9 +7,10 @@ from CNMF import CNMF, Get_VCA
 import loader as ld
 import time
 import CPPA as ppa
-from spatial_transform import full_transform, get_pixels
+from spatial_transform import full_transform, get_pixels, prepare_pixel_data, rebuild_data
 import json
 import cv2
+import matplotlib.pyplot as plt
 
 class Fusion:
         def __init__(self, name = ""): #THIS IS still A BAD INIT FUNCTION
@@ -20,7 +21,7 @@ class Fusion:
                         self.data_string = Path(f"C:/Users/phili/Desktop/Image_fusion/data/{self.name}.nc")
                 self.read_config()
                 self.flip = True
-                self.patch_size = 20
+                self.patch_size = 100
                 rgb_mask = np.loadtxt(self.rgb_mask)
                 self.spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],112)
                 self.loops = (self.inner_loops, self.outer_loops)
@@ -58,18 +59,18 @@ class Fusion:
                         scale_factor = dx
                         new_width = width
                         new_height = int(height * scale_factor)
-                
                 self.full_arr = cv2.resize(normalized, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
                 hsi_rgb = np.uint8(cv2.normalize(self.full_arr@self.spectral_response_matrix.T, None, 0, 255, cv2.NORM_MINMAX))
+
                 self.hsi_grayscale = cv2.cvtColor(hsi_rgb, cv2.COLOR_RGB2GRAY)
                 self.rgb_grayscale = cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2GRAY)
 
                 
                 
         def get_transform(self):
-                self.active_area, self.transform = full_transform(self.rgb_grayscale, self.hsi_grayscale)
-                self.full_arr = self.full_arr[self.active_area[0]:self.active_area[1],self.active_area[2]:self.active_area[3]].copy()
-                  
+                self.h_active_area, self.r_active_area, self.transform_h2r, self.transform_r2h = full_transform(self.rgb_grayscale, self.hsi_grayscale)
+                self.full_arr = self.full_arr[self.h_active_area[0]:self.h_active_area[1],self.h_active_area[2]:self.h_active_area[3]].copy()
+
         def read_config(self):
                 with open("config.txt", 'r') as file:
                         for line in file:
@@ -92,14 +93,14 @@ class Fusion:
         
         def fuse(self, HSI_patch, RGB_patch, spatial_transform):
                 if self.type == "PPA":
-                        upscaled_patch, patch_endmembers, patch_abundances = ppa.CPPA(HSI_data = HSI_patch, 
-                                                                                            MSI_data= RGB_patch, 
-                                                                                            spatial_transform= spatial_transform, 
-                                                                                            spectral_response= self.spectral_response_matrix, 
-                                                                                            delta= self.delta, 
-                                                                                            endmembers= self.endmember_n,
-                                                                                            loops= self.loops,
-                                                                                            tol= self.tol)
+                        upscaled_patch = ppa.CPPA(HSI_data = HSI_patch, 
+                                                  MSI_data= RGB_patch, 
+                                                  spatial_transform= spatial_transform, 
+                                                  spectral_response= self.spectral_response_matrix, 
+                                                  delta= self.delta, 
+                                                  endmembers= self.endmember_n,
+                                                  loops= self.loops,
+                                                  tol= self.tol)
                 elif self.type == "CNMF":
                         upscaled_patch, patch_endmembers, patch_abundances = CNMF(HSI_data = HSI_patch, 
                                                                                             MSI_data= RGB_patch, 
@@ -117,7 +118,7 @@ class Fusion:
                         self.delta = self.delta*0.5
                         print(f"Abundances outside of allowed values, reducing delta to {self.delta}")
                         self.fuse()
-                return upscaled_patch, patch_endmembers, patch_abundances
+                return upscaled_patch
         
         def log_run(self):
                 self.save_path = f"outputs\\{self.type}_{self.name}_{self.x_start}-{self.x_end}x_{self.y_start}-{self.y_end}y_{self.endmember_n}EM_{self.delta}d_{self.remove_darkest}RD\\"
@@ -164,25 +165,34 @@ class Fusion:
                                 
         def fuse_image(self):
                 start = time.time()
-                final_cube_shape = (self.active_area[1]-self.active_area[0], self.active_area[3]-self.active_area[2], 112)
-                self.upscaled_datacube = np.memmap("Upscaled_cube.dat", dtype=np.uint8, mode='w+', shape=final_cube_shape)
+                final_cube_shape = (self.r_active_area[1]-self.r_active_area[0], self.r_active_area[3]-self.r_active_area[2], 112)
+                self.upscaled_datacube = np.memmap("Upscaled_cube.dat", dtype=np.float32, mode='w+', shape=final_cube_shape)
                 #~1.1 billion pixel values on upscaled cube
+                r_limits = np.array([0, self.rgb_img.shape[0], 0, self.rgb_img.shape[1]])
                 done = False
-                x, y = 20, 20
+                x, y = 0, 0
                 while not done:
                         done_row = False
-                        y_min = y
-                        y_max = y+self.patch_size
+                        x = 0
                         while not done_row:
-                                x_min = x
-                                x_max = x+self.patch_size
-                                limits = np.array([x_min, x_max, y_min, y_max])
-                                hsi_patch = self.full_arr[x_min:x_max,y_min:y_max].copy()
-                                spatial_transform, rgb_limits = get_pixels(limits, self.transform, self.rgb_img.shape)
-                                rgb_patch = self.rgb_img[rgb_limits[0]:rgb_limits[1],rgb_limits[2]:rgb_limits[3],:]
-                                upscaled_patch, patch_endmembers, patch_abundances = self.fuse(hsi_patch, rgb_patch, spatial_transform)
-                                self.upscaled_datacube[x_min:x_max,y_min:y_max,:] = upscaled_patch
-                                self.upscaled_datacube.flush()
+                                h_limits = np.array([x, x+self.patch_size, y, y+self.patch_size])
+                                hsi_patch = self.full_arr[x:x+self.patch_size,y:y+self.patch_size].copy()
+                                spatial_transform, rgb_limits, hsi_patch_mask, rgb_patch_mask = get_pixels(h_limits, 
+                                                                                                           r_limits, 
+                                                                                                           self.transform_r2h, 
+                                                                                                           self.transform_h2r
+                                                                                                           )
+                                if np.sum(rgb_patch_mask) != 0:
+                                        rgb_patch = self.rgb_img[rgb_limits[0]:rgb_limits[1], rgb_limits[2]:rgb_limits[2]]
+                                        hsi_patch, rgb_patch = prepare_pixel_data(hsi_patch, rgb_patch, hsi_patch_mask, rgb_patch_mask)
+                                        upscaled_data = self.fuse(hsi_patch, 
+                                                                   rgb_patch, 
+                                                                   spatial_transform)
+                                        upscaled_patch = rebuild_data(upscaled_data,rgb_patch_mask)
+                                        self.upscaled_datacube[rgb_limits[0]:rgb_limits[1],
+                                                               rgb_limits[2]:rgb_limits[2],:][rgb_patch_mask == 1] = upscaled_patch
+                                        self.upscaled_datacube.flush()
+                                print(f"Done patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size})")
                                 x += self.patch_size
                                 if x > self.full_arr.shape[0] - self.patch_size:
                                         done_row = True
@@ -191,6 +201,8 @@ class Fusion:
                                 done = True
                 elapsed = time.time()-start
                 print(f"Total run over in {elapsed} seconds, final datacube size is {self.upscaled_datacube.nbytes}")
+                plt.imshow(self.upscaled_datacube[:,:,50])
+                plt.show()
                                 
                                 
 def run(name):

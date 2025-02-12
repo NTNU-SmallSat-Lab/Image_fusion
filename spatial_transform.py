@@ -41,8 +41,6 @@ def align_and_overlay(hsi_img, rgb_img, output_path): #TODO rewrite this to crop
     M, mask1 = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, ransacReprojThreshold=5,confidence=0.995, maxIters=5000)
     N, mask2 = cv2.findHomography(dst_pts, src_pts, cv2.RANSAC, ransacReprojThreshold=5,confidence=0.995, maxIters=5000)
     
-    print(M)
-    
     inliers = mask1.ravel() == 1
     outliers = mask1.ravel() == 0
     # Checking how many matches are outliers
@@ -61,89 +59,47 @@ def align_and_overlay(hsi_img, rgb_img, output_path): #TODO rewrite this to crop
     
     cv2.imwrite(f"{output_path}overlay.png", overlay_img)
     return M, N
-    
-"""def generate_full_spatial(hsi_dim,rgb_dim, transformation):
-    #Dest maps where each RGB pixel is mapped on HSI, for example Dest[250, 250] = [2045, 145]
-    #Indicates that RGB pixel (250,250) is spatially equivelent to HSI pixel (2045, 145)
-    #For the moment these are being brute forced into specific pixels using Int() THIS SHOULD BE FIXED
-    Dest = np.zeros(shape=(rgb_dim[0], rgb_dim[1], 2), dtype=np.int16)
-    n_pixel = 25
-    Source = np.ones(shape=(hsi_dim[0], hsi_dim[1], n_pixel, 2), dtype=np.int16)*-1
-    for i in range(rgb_dim[0]):
-        if i%10 == 0:
-            print(f"Row {i}")
-        for j in range(rgb_dim[1]):
-            Destcoord = transformation@np.array([i, j, 1])
-            Dest[i,j,:] = np.array([int(Destcoord[0]),int(Destcoord[1])])
-            if 0 <= int(Destcoord[0]) < hsi_dim[0] and 0 <= int(Destcoord[1]) < hsi_dim[1]:
-                k = 0
-                #print(int(Destcoord[0]),int(Destcoord[1]))
-                while Source[int(Destcoord[0]), int(Destcoord[1]), k, 0] != -1:
-                    k += 1
-                    assert k < n_pixel, "Array size inadequate"
-                Source[int(Destcoord[0]),int(Destcoord[1]),k,:] = np.array([i,j])
-    
-    return Source"""
 
-def generate_spatial_subset(area_of_interest, full_transform):
-    #need to implement method to correct values from each pixel, at the moment each pixel contributes equally
-    subtransform = full_transform[area_of_interest[0]:area_of_interest[1],area_of_interest[2]:area_of_interest[3],:,:]
-    maskx = subtransform[:,:,:,0] != -1
-    masky = subtransform[:,:,:,1] != -1
-    print(f"np.max(x) = {np.max(subtransform[:,:,:,0])}, np.min(x) = {np.min(subtransform[:,:,:,0][maskx])}")
-    print(f"np.max(y) = {np.max(subtransform[:,:,:,1])}, np.min(y) = {np.min(subtransform[:,:,:,1][masky])}")
-    rgb_x_min, rgb_x_max = np.min(subtransform[:,:,:,0][maskx]), np.max(subtransform[:,:,:,0])
-    rgb_y_min, rgb_y_max = np.min(subtransform[:,:,:,1][masky]), np.max(subtransform[:,:,:,1])
-    rgb_x = rgb_x_max-rgb_x_min
-    rgb_y = rgb_y_max-rgb_y_min
-    
-    hsi_x = area_of_interest[1] - area_of_interest[0]
-    hsi_y = area_of_interest[3] - area_of_interest[2]    
-    
-    transform_array = np.zeros(shape=((rgb_x+1)*(rgb_y+1),hsi_x*hsi_y))
-    
-    for i in range(subtransform.shape[0]):
-        for j in range(subtransform.shape[1]):
-            k = 0
-            while subtransform[i,j,k,0] != -1:
-                try:
-                    transform_array[
-                        subtransform[i, j, k, 0] - rgb_x_min + (subtransform[i, j, k, 1] - rgb_y_min) * rgb_x,
-                        i + j * hsi_x
-                    ] = 1  # TODO: Implement weighting
-
-                except IndexError as e:
-                    raise IndexError(
-                        f"Out-of-bounds access in transform_array: "
-                        f"Index ({subtransform[i, j, k, 0] - rgb_x_min}, {subtransform[i, j, k, 1] - rgb_y_min}) \n"
-                        f"Transformed index: {subtransform[i, j, k, 0] - rgb_x_min + (subtransform[i, j, k, 1] - rgb_y_min) * rgb_x, i + j * hsi_x}\n"
-                        f"From: {subtransform[i, j, k, 0] - rgb_x_min} + {(subtransform[i, j, k, 1] - rgb_y_min)}*{rgb_x}\n"
-                        f"with shape {transform_array.shape}. Check index calculations."
-                    ) from e
-
-                except Exception as e:
-                    raise RuntimeError(f"Unexpected error in array indexing: {e}") from e
-
-                    
-                k += 1
-    
-    normalization_weights = np.sum(transform_array, axis=0)
-    transform_array = transform_array/normalization_weights
-    print(transform_array)
-    return transform_array
-
-def get_pixels(pixel_bounds, transformation, rgb_dim): #THIS WHOLE FUNCTION IS A MESS AND SHOULD PROBABLY BE REWRITTEN
+def get_pixels(pixel_bounds, rgb_bounds, transform_r2h, transform_h2r): #THIS WHOLE FUNCTION IS A MESS AND SHOULD PROBABLY BE REWRITTEN
     """Finds spatial transform between HSI and RGB section.
 
     Args:
         pixel_bounds (np.array): point coords that define HSI active area
-        transformation (np.array): homogenous transform from HSI->RGB
-        rgb_dim (tuple): RGB (height, width) 
+        rgb_bounds (np.array): point coords that define entire RGB image
+        transform_r2h (np.array): homogenous transform from RGB->HSI
+        transform_h2r (np.array): homogenous transform from HSI->RGB
 
     Returns:
-        tuple (np.array, np.array): (spatial transform, rgb active area)
+        tuple (np.array, np.array, np.array, np.array): (spatial transform, rgb bounds [xmin, xmax, ymin, ymax], hsi overlap mask, rgb overlap mask)
     """
-    return 0
+    
+    h_mask = find_overlap(pixel_bounds, rgb_bounds, transform_r2h)
+    r_mask = find_overlap(rgb_bounds, pixel_bounds, transform_h2r)
+    
+    rgb_min_x, rgb_max_x, rgb_min_y, rgb_max_y = find_edges(r_mask)
+    
+    print(f"patch limits: {rgb_min_x}, {rgb_max_x}, {rgb_min_y}, {rgb_max_y}")
+    
+    h_pixels = np.sum(h_mask)
+    r_pixels = np.sum(r_mask)
+       
+    spatial_transform = np.zeros(shape=(h_pixels, r_pixels))
+    skipped = 0
+    for i in range(rgb_min_x,rgb_max_x):
+        for j in range(rgb_min_y,rgb_max_y):
+            if r_mask[i,j] == 0:
+                skipped += 1
+                break
+            
+            hsi = (transform_r2h@np.array([i,j,1]))[:2]
+            hsi = np.uint32(np.round(hsi))
+            assert h_mask[hsi] == 1, f"Spatial mapping disagrees with mask"
+            spatial_transform[hsi[0]+hsi[1]*h_mask.shape[0],(i-rgb_min_x)+(j-rgb_min_y)*r_mask.shape[0]-skipped] = 1
+    
+    normalization_weights = np.sum(spatial_transform, axis=0)
+    spatial_transform = spatial_transform/normalization_weights
+    
+    return spatial_transform, np.array([rgb_min_x, rgb_max_x, rgb_min_y, rgb_max_y]), h_mask, r_mask
     
 def full_transform(rgb_img, hsi_img):
     """Finds homogenous projective transform between RGB and HSI, crops HSI to minimum size then recalculates transform.
@@ -151,46 +107,121 @@ def full_transform(rgb_img, hsi_img):
     Args:
         rgb_img (np.array): RGB image (grayscale)
         hsi_img (np.array): HSI image (grayscale)
-
     Returns:
-        tuple: (active area coords, HSI->RGB transform, RGB->HSI transform)
+        tuple: (HSI_limits,RGB_limits, HSI->RGB transform, RGB->HSI transform)
     """
-    transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/")
-    overlap_points = find_overlap(hsi_img.shape[:2],rgb_img.shape[:2],transform_r2h)
-    x_min, x_max = np.min(overlap_points[:,1]), np.max(overlap_points[:,1])-1
-    y_min, y_max = np.min(overlap_points[:,0]), np.max(overlap_points[:,0])-1
-    hsi_img = hsi_img[x_min:x_max,y_min:y_max]
-    transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/") #lazy solution, translation affects projective numbers
-    return np.array([x_min,x_max,y_min,y_max]), transform_h2r
+    transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/") #find both transforms for full images
+    hsi_points = np.array([0, hsi_img.shape[0], 0, hsi_img.shape[1]])
+    rgb_points = np.array([0, rgb_img.shape[1], 0, rgb_img.shape[0]])
+    h_mask = find_overlap(hsi_points,rgb_points,transform_r2h) #find hsi mask of overlapped area
+    hsi_limits = find_edges(h_mask) #find x/y limits of overlapped area
+    hsi_img = hsi_img[hsi_limits[0]:hsi_limits[1],hsi_limits[2]:hsi_limits[3]] #crop rest
+    hsi_limits = [0,hsi_img.shape[0],0,hsi_img.shape[1]] #redefine limits
+    transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/") #find both transforms for cropped HSI
+    r_mask = find_overlap(rgb_points,hsi_limits,transform_h2r) #find RGB mask of overlapped area
+    rgb_limits = find_edges(r_mask) #find x/y limits of overlapped area
+    return hsi_limits, rgb_limits, transform_h2r, transform_r2h
 
-def find_overlap(HSI_dim, RGB_dim, transform): #should probably be extended to not assume origin = (0,0)
-    """Finds points define overlap area between HSI and RGB
+def find_overlap(A_points: np.ndarray, B_points: np.ndarray, transform: np.ndarray) -> np.ndarray: #should probably be extended to not assume origin = (0,0)
+    """Returns mask of area of A that is covered by B
 
     Args:
-        HSI_dim (tuple): (height, width) of HSI
-        RGB_dim (tuple): (height, width) of RGB
-        transform (np.array): homogenous transform from RGB to HSI coordinate system
+        A_dim (tuple): (height, width) of A
+        B_dim (tuple): (height, width) of B
+        transform (np.array): homogenous transform from B to A coordinate system
 
     Returns:
-        np.array: (n,2) where n is the number of points defining overlap shape, each point defined by (x,y) in HSI coordinates
+        np.array: (n,2) where n is the number of points defining overlap shape, each point defined by (x,y) in A coordinates
     """
-    HSI_corners = np.array([
-        [0, 0],
-        [HSI_dim[1], 0],           # use width for x coordinate
-        [HSI_dim[1], HSI_dim[0]],    # width for x, height for y
-        [0, HSI_dim[0]]
+    B_corners = np.array([
+        [B_points[0], B_points[2]], #x0, y0
+        [B_points[1], B_points[2]], #x1, y0
+        [B_points[1], B_points[3]], #x1, y1
+        [B_points[0], B_points[3]]  #x0, y1
     ]).astype(np.float32)
-    RGB_corners = np.array([
-        [0,0],
-        [RGB_dim[1],0],
-        [RGB_dim[1],RGB_dim[0]],
-        [0,RGB_dim[0]]
-    ]).astype(np.float32)
-    RGB_corners_warped = cv2.perspectiveTransform(RGB_corners.reshape(-1, 1, 2), transform).reshape(-1, 2)
-    retval, intersection = cv2.intersectConvexConvex(HSI_corners, RGB_corners_warped)
+    B_corners_warped = cv2.perspectiveTransform(B_corners.reshape(-1, 1, 2), transform)
+
+    # Convert to int32 for cv2.fillPoly
+    B_corners_warped = np.round(B_corners_warped).astype(np.int32)
+    B_corners_warped[0] -= np.array([B_points[0],B_points[2]])
+
+    # Create binary mask
+    mask = np.zeros((A_points[1]-A_points[0], A_points[3]-A_points[2]), dtype=np.uint8)
+    #print(f"mask shape: {mask.shape}")
+    #print(f"Poly points: {B_corners_warped}")
+
+    cv2.fillPoly(mask, [B_corners_warped.reshape(-1, 1, 2)], 1)
     
-    return np.round(intersection.reshape(-1,2)).astype(np.int32)
+    return mask
+
+def find_edges(mask)->tuple:
+    points = np.zeros(shape=4)
+    started = False
+    for i in range(mask.shape[0]):
+        if np.sum(mask[i,:]) > 0 and not started:
+            started = True
+            points[0] = i
+        if np.sum(mask[i,:]) == 0 and started:
+            points[1] = i
+            break
+        if i == mask.shape[0]-1:
+            points[1] = i
+    started = False
+    for i in range(mask.shape[1]):
+        if np.sum(mask[:,i]) > 0 and not started:
+            started = True
+            points[2] = i
+        if np.sum(mask[:,i]) == 0 and started:
+            points[3] = i
+            break
+        if i == mask.shape[1]-1:
+            points[3] = i
+    return np.round(points).astype(np.int32)
+
+def prepare_pixel_data(HSI_patch: np.ndarray, RGB_patch: np.ndarray, HSI_mask: np.ndarray, RGB_mask: np.ndarray)->tuple:
+    """Used when patches partially overlap
+
+    Args:
+        HSI_patch (np.ndarray): Square HSI patch
+        RGB_patch (np.ndarray): Square RGB patch
+        HSI_mask (np.ndarray): HSI overlay mask
+        RGB_mask (np.ndarray): RGB overlay mask
+
+    Returns:
+        tuple: HSI_data_flattened, RGB_data_flattened
+    """
+
+    skipped = 0
+    HSI_output = np.zeros(shape=(np.sum(HSI_mask),HSI_patch.shape[2]))
+    RGB_output = np.zeros(shape=(np.sum(RGB_mask),RGB_patch.shape[2]))
+    for i in range(HSI_mask.shape[0]):
+        for j in range(HSI_mask.shape[1]):
+            if HSI_mask[i,j] == 0:
+                skipped += 1
+                break
+            HSI_output[i+j*HSI_patch.shape[0]-skipped,:] = HSI_patch[i,j,:]
+    skipped = 0
+    for i in range(RGB_mask.shape[0]):
+        for j in range(RGB_mask.shape[1]):
+            if RGB_mask[i,j] == 0:
+                skipped += 1
+                break
+            RGB_output[i+j*RGB_patch.shape[0]-skipped,:] = RGB_patch[i,j,:]
     
+    return HSI_output, RGB_output
+
+def rebuild_data(data, mask):
+    patch = np.zeros(shape=(mask.shape[0], mask.shape[1], data.shape[1]))
+    skipped = 0
+    for i in range(data.shape[0]):
+        for j in range(mask.shape[1]):
+            if mask[i,j] == 0:
+                skipped += 1
+                break
+
+            patch[i,j] = data[i+j*mask.shape[0]-skipped,:]
+    return patch
+        
 if __name__ == "__main__":
     #hsi_path, _ = util.Get_path("HSI image")
     hsi_path = "slice.png"

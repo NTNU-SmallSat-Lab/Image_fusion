@@ -24,10 +24,8 @@ def CPPA(HSI_data: np.array,
     Returns:
         list[np.array, np.array, np.array]: upscaled datacube, endmember spectra, abundances
     """
-    
-    h_bands, m_bands = HSI_data.shape[2], MSI_data.shape[2]
 
-    h_flat, m_flat = HSI_data.reshape(HSI_data.shape[0]*HSI_data.shape[1],h_bands).T, MSI_data.reshape(-1,m_bands).T
+    h_flat, m_flat = HSI_data, MSI_data
     
     h_ppa = simple_PPA(data=h_flat, delta=delta, n=endmembers)
     m_ppa = simple_PPA(data=m_flat, delta=delta, n=endmembers)
@@ -40,10 +38,8 @@ def CPPA(HSI_data: np.array,
                      spatial_transform, 
                      loops[1], 
                      tol)
-    out_flat = np.matmul(w,h)
-    #out = Normalize(out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands), min=1E-6, max=1.0)
-    out = out_flat.T.reshape(MSI_data.shape[0], MSI_data.shape[1], h_bands)
-    return out, w, h
+    out = np.matmul(w,h)
+    return out
 
 
 def PPA_HSI_step(PPA_obj: simple_PPA, data):
