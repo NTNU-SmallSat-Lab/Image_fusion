@@ -36,21 +36,31 @@ class Fusion:
                         self.h_init = np.ones(shape=(self.endmember_n, self.lowres_downsampled.shape[0]*self.lowres_downsampled.shape[1]))
         
         def load_images(self):
+                # Normalize HSI Image
                 normalized = cv2.normalize(ld.load_l1b_cube(self.data_string), None, 0, 255, cv2.NORM_MINMAX)
                 normalized = np.uint8(normalized)  # Convert to uint8 for saving
-                rgb_path = str(self.data_string).replace("-", "_")
-                rgb_path = str(rgb_path).replace("16Z_l1b.nc", "14.png")
-                self.rgb_img = np.uint8(cv2.normalize(cv2.imread(rgb_path, cv2.IMREAD_COLOR_RGB), None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX))
-                if self.flip:
-                        self.rgb_img = cv2.flip(self.rgb_img,1)
-                meta_path = str(self.data_string).replace("l1b.nc", "meta.json")
 
+                # Load RGB Image (Ensure RGB Conversion)
+                rgb_path = str(self.data_string).replace("-", "_").replace("16Z_l1b.nc", "14.png")
+                self.rgb_img = cv2.imread(rgb_path, cv2.IMREAD_COLOR)
+                if self.rgb_img is not None:  
+                        self.rgb_img = cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2RGB)  # Convert BGR → RGB
+                
+                # Apply Flip and Rotate (Correct Order)
+                if self.flip:
+                        self.rgb_img = cv2.flip(self.rgb_img, 1)
+                        self.rgb_img = cv2.rotate(self.rgb_img, cv2.ROTATE_90_CLOCKWISE)
+
+                # Load Metadata
+                meta_path = str(self.data_string).replace("l1b.nc", "meta.json")
                 with open(meta_path, 'r') as file:
                         metadata = json.load(file)
-                dx = metadata.get('gsd_along')/metadata.get('gsd_across')
+
+                dx = metadata.get('gsd_along') / metadata.get('gsd_across')
                 
                 height, width = normalized.shape[:2]
 
+                # Scale Image Properly
                 if dx < 1:
                         scale_factor = 1.0 / dx
                         new_width = int(width * scale_factor)
@@ -59,9 +69,14 @@ class Fusion:
                         scale_factor = dx
                         new_width = width
                         new_height = int(height * scale_factor)
-                self.full_arr = cv2.resize(normalized, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
-                hsi_rgb = np.uint8(cv2.normalize(self.full_arr@self.spectral_response_matrix.T, None, 0, 255, cv2.NORM_MINMAX))
 
+                self.full_arr = cv2.resize(normalized, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+
+                # Compute HSI-RGB Mapping and Normalize
+                hsi_rgb_float = cv2.normalize(self.full_arr @ self.spectral_response_matrix.T, None, 0, 255, cv2.NORM_MINMAX)
+                hsi_rgb = np.clip(hsi_rgb_float, 0, 255).astype(np.uint8)
+
+                # Convert to Grayscale (Ensure Correct Color Space)
                 self.hsi_grayscale = cv2.cvtColor(hsi_rgb, cv2.COLOR_RGB2GRAY)
                 self.rgb_grayscale = cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2GRAY)
 
@@ -70,7 +85,9 @@ class Fusion:
         def get_transform(self):
                 self.h_active_area, self.r_active_area, self.transform_h2r, self.transform_r2h = full_transform(self.rgb_grayscale, self.hsi_grayscale)
                 self.full_arr = self.full_arr[self.h_active_area[0]:self.h_active_area[1],self.h_active_area[2]:self.h_active_area[3]].copy()
-
+                print(self.h_active_area)
+                os._exit(0)
+                
         def read_config(self):
                 with open("config.txt", 'r') as file:
                         for line in file:
@@ -170,13 +187,19 @@ class Fusion:
                 #~1.1 billion pixel values on upscaled cube
                 r_limits = np.array([0, self.rgb_img.shape[0], 0, self.rgb_img.shape[1]])
                 done = False
-                x, y = 0, 0
+                y = 100
                 while not done:
                         done_row = False
-                        x = 0
+                        x = 100
                         while not done_row:
                                 h_limits = np.array([x, x+self.patch_size, y, y+self.patch_size])
                                 hsi_patch = self.full_arr[x:x+self.patch_size,y:y+self.patch_size].copy()
+                                """util.plot_masks([0, self.full_arr.shape[0], 0, self.full_arr.shape[1]], 
+                                                r_limits, 
+                                                self.transform_h2r, 
+                                                self.transform_r2h,
+                                                h_limits)"""
+                                #util.plot_transforms(r_limits,h_limits,self.transform_h2r)
                                 spatial_transform, rgb_limits, hsi_patch_mask, rgb_patch_mask = get_pixels(h_limits, 
                                                                                                            r_limits, 
                                                                                                            self.transform_r2h, 
@@ -194,6 +217,7 @@ class Fusion:
                                         self.upscaled_datacube.flush()
                                 print(f"Done patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size})")
                                 x += self.patch_size
+                                print(f"x: {x} > hsi.shape[0]: {self.full_arr.shape[0] - self.patch_size} is {x > self.full_arr.shape[0] - self.patch_size}")
                                 if x > self.full_arr.shape[0] - self.patch_size:
                                         done_row = True
                         y += self.patch_size

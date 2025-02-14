@@ -8,6 +8,9 @@ import pandas as pd
 import subprocess
 import csv
 from datetime import datetime
+from spatial_transform import find_overlap
+import matplotlib.pyplot as plt
+import cv2
 
 def Cost(Data1, Data2, band1=0, band2=0):
         """calculates the squared frobenius norm between two np.arrays
@@ -123,6 +126,101 @@ def get_git_version():
         return commit_hash, clean_status
     except subprocess.CalledProcessError:
         return 'Not a Git repository', 'Unknown'
+    
+def plot_masks(hsi_dim, rgb_dim, transform_r2h, transform_h2r, hsi_area=None, rgb_area=None):
+    h_mask = find_overlap(hsi_dim, rgb_dim, transform_r2h)
+    r_mask = find_overlap(rgb_dim, hsi_dim, transform_h2r)
+    
+    h_mask = np.stack([h_mask] * 3, axis=-1)*120  # Ensure 3-channel representation
+    r_mask = np.stack([r_mask] * 3, axis=-1)*120
+    
+    points_on_r_mask = None
+    points_on_h_mask = None
+    
+    if hsi_area is not None and np.all(hsi_area) is not None:
+        h_mask[hsi_area[0]:hsi_area[1], hsi_area[2]:hsi_area[3]] = [255, 0, 0]
+        
+        points_on_r_mask = (transform_h2r @ np.array([
+            [hsi_area[0], hsi_area[2], 1],
+            [hsi_area[1], hsi_area[2], 1],
+            [hsi_area[1], hsi_area[3], 1],
+            [hsi_area[0], hsi_area[3], 1]
+        ]).T)[:2, :].astype(int).T
+    
+    if rgb_area is not None and np.all(rgb_area) is not None:
+        r_mask[rgb_area[0]:rgb_area[1], rgb_area[2]:rgb_area[3]] = [0, 0, 255]
+        
+        points_on_h_mask = (transform_r2h @ np.array([
+            [rgb_area[0], rgb_area[2], 1],
+            [rgb_area[1], rgb_area[2], 1],
+            [rgb_area[1], rgb_area[3], 1],
+            [rgb_area[0], rgb_area[3], 1]
+        ]).T)[:2, :].astype(int).T
+    
+    if points_on_r_mask is not None:
+        points_on_r_mask = np.clip(points_on_r_mask, 0, np.array(r_mask.shape[:2]) - 1)
+        cv2.fillPoly(r_mask, [points_on_r_mask], (255, 0, 0))
+    
+    if points_on_h_mask is not None:
+        points_on_h_mask = np.clip(points_on_h_mask, 0, np.array(h_mask.shape[:2]) - 1)
+        cv2.fillPoly(h_mask, [points_on_h_mask], (0, 0, 255))
+    
+    # Plot the masks side by side
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    
+    axes[0].imshow(h_mask)
+    axes[0].set_title("HSI Mask")
+    axes[0].axis("off")
+    
+    axes[1].imshow(r_mask)
+    axes[1].set_title("RGB Mask")
+    axes[1].axis("off")
+    
+    plt.show()
+    
+def plot_transforms(A_points, B_points, transform_B2A):
+    print(f"Transform: {transform_B2A}\n")
+    print(f"limits A {A_points}\nlimits B {B_points}")
+    A_corners = np.array([[A_points[0], A_points[2], 1.0],
+                          [A_points[1], A_points[2], 1.0],
+                          [A_points[1], A_points[3], 1.0],
+                          [A_points[0], A_points[3], 1.0]], dtype=np.float32)
+    
+    B_corners = np.array([[B_points[0], B_points[2], 1.0],
+                          [B_points[1], B_points[2], 1.0],
+                          [B_points[1], B_points[3], 1.0],
+                          [B_points[0], B_points[3], 1.0]], dtype=np.float32)
+    
+    # Transform B_corners to A's coordinate system
+    B_warped_corners_homogeneous = (transform_B2A @ B_corners.T).T
+    B_warped_corners = (B_warped_corners_homogeneous[:, :2] / B_warped_corners_homogeneous[:, 2:3]).astype(np.int32)
+    
+    # Determine the bounding box for the mask
+    all_corners = np.vstack((A_corners[:, :2], B_corners[:, :2], B_warped_corners))
+    max_x, max_y = np.max(all_corners, axis=0).astype(int)
+    
+    width, height = max_x + 1, max_y + 1
+    mask = np.zeros((height, width, 3), dtype=np.uint8)
+    mask_added = np.zeros((height, width, 3), dtype=np.uint8)
+    
+    # Ensure correct shape for cv2.fillPoly
+    A_corners_int = A_corners[:, :2].astype(np.int32).reshape((-1, 1, 2))
+    B_corners_int = B_corners[:, :2].astype(np.int32).reshape((-1, 1, 2))
+    B_warped_corners_int = B_warped_corners.reshape((-1, 1, 2))
+    
+    # Draw shapes
+    mask_added += cv2.fillPoly(mask, [A_corners_int], (255, 0, 0))  # Red for A
+    mask_added += cv2.fillPoly(mask, [B_corners_int], (0, 0, 255))  # Blue for B
+    mask_added += cv2.fillPoly(mask, [B_warped_corners_int], (0, 255, 0))  # Green for B_warped
+    
+    # Display the mask
+    plt.imshow(mask_added)
+    plt.axis("off")
+    plt.show()
+    
+    
+    
+    
     
 def log_results_to_csv(filename, variable_values, result_values):
     # Get the current timestamp
