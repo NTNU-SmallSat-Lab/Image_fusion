@@ -8,7 +8,7 @@ import pandas as pd
 import subprocess
 import csv
 from datetime import datetime
-from spatial_transform import find_overlap
+#from spatial_transform import find_overlap
 import matplotlib.pyplot as plt
 import cv2
 
@@ -127,7 +127,7 @@ def get_git_version():
     except subprocess.CalledProcessError:
         return 'Not a Git repository', 'Unknown'
     
-def plot_masks(hsi_dim, rgb_dim, transform_r2h, transform_h2r, hsi_area=None, rgb_area=None):
+"""def plot_masks(hsi_dim, rgb_dim, transform_r2h, transform_h2r, hsi_area=None, rgb_area=None):
     h_mask = find_overlap(hsi_dim, rgb_dim, transform_r2h)
     r_mask = find_overlap(rgb_dim, hsi_dim, transform_h2r)
     
@@ -176,7 +176,7 @@ def plot_masks(hsi_dim, rgb_dim, transform_r2h, transform_h2r, hsi_area=None, rg
     axes[1].set_title("RGB Mask")
     axes[1].axis("off")
     
-    plt.show()
+    plt.show()"""
     
 def plot_transforms(A_points, B_points, transform_B2A):
     print(f"Transform: {transform_B2A}\n")

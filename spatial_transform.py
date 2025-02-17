@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import utilities as util
-def align_and_overlay(hsi_img, rgb_img, output_path): #TODO rewrite this to crop and recalculate transform to only include active area
+def align_and_overlay(hsi_img, rgb_img, output_path):
     rgb_img = cv2.GaussianBlur(rgb_img, (15, 15), 0)
 
     cv2.imwrite(f"{output_path}rgb.png", rgb_img)
@@ -109,20 +109,19 @@ def full_transform(rgb_img, hsi_img):
         tuple: (HSI_limits,RGB_limits, HSI->RGB transform, RGB->HSI transform)
     """
     transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/") #find both transforms for full images
-    hsi_points = np.array([0, hsi_img.shape[0], 0, hsi_img.shape[1]])
-    rgb_points = np.array([0, rgb_img.shape[0], 0, rgb_img.shape[1]])
+    hsi_points = np.array([0, hsi_img.shape[1]-1, 0, hsi_img.shape[0]-1])
+    rgb_points = np.array([0, rgb_img.shape[1]-1, 0, rgb_img.shape[0]-1])
+    util.plot_transforms(hsi_points,rgb_points,transform_r2h)
+    #print(f"hsi_points: {hsi_points}\nrgb_points: {rgb_points}")
     h_mask = find_overlap(hsi_points,rgb_points,transform_r2h) #find hsi mask of overlapped area
-    plt.imshow(h_mask)
-    plt.show()
-    os._exit(0)
     hsi_limits = find_edges(h_mask) #find x/y limits of overlapped area
-    print(f"HSI lim {hsi_limits}\n hsi_dim {h_mask.shape}")
     hsi_img = hsi_img[hsi_limits[0]:hsi_limits[1],hsi_limits[2]:hsi_limits[3]].copy() #crop rest
-    hsi_limits = [0,hsi_img.shape[0],0,hsi_img.shape[1]] #redefine limits
+    hsi_limits = [0,hsi_img.shape[1]-1,0,hsi_img.shape[0]-1] #redefine limits
     transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/") #find both transforms for cropped HSI
+    #print(f"rgb_points: {rgb_points}\nhsi_points: {hsi_limits}")
     r_mask = find_overlap(rgb_points,hsi_limits,transform_h2r) #find RGB mask of overlapped area
     rgb_limits = find_edges(r_mask) #find x/y limits of overlapped area
-    print(f"rgb lim: {rgb_limits}\n hsi lim: {hsi_limits}")
+    util.plot_transforms(rgb_points,hsi_limits,transform_h2r)
     plt.imshow(r_mask)
     plt.show()
     os._exit(0)
@@ -160,15 +159,15 @@ def find_overlap(A_points: np.ndarray, B_points: np.ndarray, transform: np.ndarr
             end_coord = B_corners_warped[0]
         else:
             end_coord = B_corners_warped[i+1]
-        poly_corners.extend(find_intersect(A_points,start_coord,end_coord))
-    
+        segment_intersections = find_intersect(A_points, start_coord, end_coord)
+        poly_corners.extend(segment_intersections)
     poly_corners = np.array(poly_corners, dtype=np.int32)
     poly_corners = order_points_clockwise(poly_corners)
-    print(poly_corners)
+    
     poly_corners = poly_corners.reshape((-1, 1, 2))
-
-    mask = np.zeros((A_points[1]-A_points[0], A_points[3]-A_points[2]), dtype=np.uint8)
-    cv2.fillPoly(mask, poly_corners, 1)
+    mask = np.zeros((A_points[3]-A_points[2]+1, A_points[1]-A_points[0]+1), dtype=np.uint8)
+    print(f"\n===OVERLAP===\npoly corners: {poly_corners}\n mask size: {mask.shape}\nWarped corners = {B_corners_warped}")
+    mask = cv2.fillPoly(mask, [poly_corners], 1)
     return mask
 
 def find_edges(mask) -> tuple:
@@ -187,65 +186,58 @@ def find_edges(mask) -> tuple:
 
     return np.array([x_min, x_max, y_min, y_max], dtype=np.int32)
 
-def find_intersect(limits, coord_0, coord_1):
+import numpy as np
+
+def find_intersect(edges, coord_0, coord_1):
+
     intersections = []
-    points_inside = 0
-    if (limits[0] <= coord_0[0] < limits[1]) and (limits[2] <= coord_0[1] < limits[3]):
+    limits = np.array(edges, dtype=np.float32)  # Ensure limits is a NumPy array to avoid mutability issues
+
+    inside_0 = (edges[0] <= coord_0[0] <= edges[1]) and (edges[2] <= coord_0[1] <= edges[3])
+    inside_1 = (edges[0] <= coord_1[0] <= edges[1]) and (edges[2] <= coord_1[1] <= edges[3])
+
+    if inside_0:
         intersections.append(coord_0)
-        points_inside += 1
-    if (limits[0] <= coord_1[0] < limits[1]) and (limits[2] <= coord_1[1] < limits[3]):
-        points_inside += 1
-    if points_inside == 2:
-        #print(f"For limits: {limits} and points {coord_0, coord_1}")
-        #print(f"Intersections: {intersections}")
-        return intersections
-    outer_edges = np.array([[[limits[0], limits[2]], [limits[1], limits[2]]],
-                   [[limits[1], limits[2]], [limits[1], limits[3]]],
-                   [[limits[1], limits[3]], [limits[0], limits[3]]],
-                   [[limits[0], limits[3]], [limits[0], limits[2]]]]) #(segment, point, coords)
-    line = np.array([coord_0, coord_1])
-    for edge in outer_edges:
-        A1 = line[1,1]-line[0,1]
-        B1 = line[0,0]-line[1,0]
-        C1 = A1 * line[0,0] + B1 * line[1,1]
-        
-        A2 = edge[1,1]-edge[0,1]
-        B2 = edge[0,0]-edge[1,0]
-        C2 = A2 * edge[0,0] + B2 * edge[1,1]
-        
-        det = A1*B2-A2*B1
-        
-        if abs(det) < 1e-10:
-            continue  # Avoids unstable division
-        
-        x = (B2 * C1 - B1 * C2) / det
-        y = (A1 * C2 - A2 * C1) / det
-        intersection = np.array([x, y])
-        #print(f"intersection for lines between {edge[0,:],edge[1,:]} and {line[0,:], line[1,:]} found to be {intersection[:]}")
-        
-        edge_bounds = np.array([np.min(edge[:,0]), np.max(edge[:,0]), np.min(edge[:,1]), np.max(edge[:,1])])
-        line_bounds = np.array([np.min(line[:,0]), np.max(line[:,0]), np.min(line[:,1]), np.max(line[:,1])])
-        if (edge_bounds[0] > line_bounds[1] or
-            line_bounds[0] > edge_bounds[1] or
-            edge_bounds[2] > line_bounds[3] or
-            line_bounds[2] > edge_bounds[3]):
-            continue
-        min_x, max_x = np.sort([np.max([np.min(line[:,0]),np.min(edge[:,0])]), np.min([np.max(line[:,0]), np.max(edge[:,0])])])
-        min_y, max_y = np.sort([np.max([np.min(line[:,1]),np.min(edge[:,1])]), np.min([np.max(line[:,1]), np.max(edge[:,1])])])
-        
-        #Some geometries lead to inverted limits
-        min_x -= 1e-12
-        min_y -= 1e-12
-        max_x += 1e-12
-        max_y += 1e-12
-        # Check if the intersection point lies within both line segments
-        if (min_x <= x <= max_x) and (min_y <= y <= max_y):
-            intersections.append(intersection)
-            #print(f"Within limits {min_x}, {max_x}, {min_y}, {max_y}")
-    #print(f"For limits: {limits} and points {coord_0, coord_1}")
-    #print(f"Intersections: {intersections}")
-    print(intersections)
-    return intersections
+        if inside_1:
+            return intersections  # No need to check intersections
+
+    # Compute bounding box for the line segment
+    limits[0] = np.min([coord_0[0], coord_1[0]]) - 1e-3 if edges[0] < np.min([coord_0[0], coord_1[0]]) < edges[1] else edges[0]
+    limits[1] = np.max([coord_0[0], coord_1[0]]) + 1e-3 if edges[0] < np.max([coord_0[0], coord_1[0]]) < edges[1] else edges[1]
+    limits[2] = np.min([coord_0[1], coord_1[1]]) - 1e-3 if edges[2] < np.min([coord_0[1], coord_1[1]]) < edges[3] else edges[2]
+    limits[3] = np.max([coord_0[1], coord_1[1]]) + 1e-3 if edges[2] < np.max([coord_0[1], coord_1[1]]) < edges[3] else edges[3]
+
+    dx = coord_1[0] - coord_0[0]
+    dy = coord_1[1] - coord_0[1]
+
+    vertical = np.abs(dx) < 1e-9
+    horizontal = np.abs(dy) < 1e-9
+
+    # Check vertical intersections
+    if not vertical:
+        intersect_0 = coord_0 + ((edges[0] - coord_0[0]) / dx) * np.array([dx, dy])
+        intersect_1 = coord_0 + ((edges[1] - coord_0[0]) / dx) * np.array([dx, dy])
+
+        if limits[0] <= intersect_0[0] <= limits[1] and limits[2] <= intersect_0[1] <= limits[3]:
+            intersections.append(intersect_0)
+
+        if limits[0] <= intersect_1[0] <= limits[1] and limits[2] <= intersect_1[1] <= limits[3]:
+            intersections.append(intersect_1)
+
+    # Check horizontal intersections
+    if not horizontal:
+        intersect_2 = coord_0 + ((edges[2] - coord_0[1]) / dy) * np.array([dx, dy])
+        intersect_3 = coord_0 + ((edges[3] - coord_0[1]) / dy) * np.array([dx, dy])
+
+        if limits[0] <= intersect_2[0] <= limits[1] and limits[2] <= intersect_2[1] <= limits[3]:
+            intersections.append(intersect_2)
+
+        if limits[0] <= intersect_3[0] <= limits[1] and limits[2] <= intersect_3[1] <= limits[3]:
+            intersections.append(intersect_3)
+
+    return np.array(intersections, dtype=np.int32)
+
+
 
 def order_points_clockwise(points):
     """
