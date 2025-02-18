@@ -3,64 +3,155 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import utilities as util
-def align_and_overlay(hsi_img, rgb_img, output_path):
-    rgb_img = cv2.GaussianBlur(rgb_img, (15, 15), 0)
 
-    cv2.imwrite(f"{output_path}rgb.png", rgb_img)
-    cv2.imwrite(f"{output_path}hsi.png", hsi_img)
+class spatial_transform:
+    def __init__(self, hsi_image, rgb_image, write=False):
+        self.rgb_image = rgb_image #note that these images are grayscale representations
+        self.hsi_image = hsi_image #note that these images are grayscale representations
+        self.h2r_transform, self.r2h_transform = None, None
+        self.hsi_mask, self.rgb_mask = None, None
+        self.hsi_limits = None
+        self.align_and_overlay()
+        self.find_overlap()
+        assert np.any(self.hsi_mask) and np.any(self.rgb_mask), "Mask generation failed"
+        self.crop_hsi()
+        self.align_and_overlay() #find transform after cropping
+        self.find_overlap()
     
-    # Initialize SIFT detector - parameters are almost definitely sub-optimal
-    sift = cv2.SIFT_create(nfeatures=50000, contrastThreshold=0.015, edgeThreshold=40, sigma=2)
+    def align_and_overlay(self):
+        rgb_image = cv2.GaussianBlur(self.rgb_image, (15, 15), 0)
+        hsi_image = self.hsi_image
 
-    # Detect keypoints and descriptors
-    kp_hsi, des_hsi = sift.detectAndCompute(hsi_img, None)
-    kp_rgb, des_rgb = sift.detectAndCompute(rgb_img, None)
+        if self.write:
+            cv2.imwrite("output/rgb.png", rgb_image)
+            cv2.imwrite("output/hsi.png", self.hsi_image)
+        
+        # Initialize SIFT detector - parameters are almost definitely sub-optimal
+        sift = cv2.SIFT_create(nfeatures=50000, contrastThreshold=0.015, edgeThreshold=40, sigma=2)
 
-    # Use BFMatcher to find the best matches
-    bf = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
-    matches = bf.knnMatch(des_hsi, des_rgb, k=2)
+        # Detect keypoints and descriptors
+        kp_hsi, des_hsi = sift.detectAndCompute(hsi_image, None)
+        kp_rgb, des_rgb = sift.detectAndCompute(rgb_image, None)
 
-    # Apply Lowe's ratio test to filter matches
-    good_matches = []
-    for m, n in matches:
-        if m.distance < 0.75 * n.distance:
-            good_matches.append(m)
+        # Use BFMatcher to find the best matches
+        bf = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
+        matches = bf.knnMatch(des_hsi, des_rgb, k=2)
 
-    img_matches = cv2.drawMatches(hsi_img, kp_hsi, rgb_img, kp_rgb, good_matches[:50], None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        # Apply Lowe's ratio test to filter matches
+        good_matches = []
+        for m, n in matches:
+            if m.distance < 0.75 * n.distance:
+                good_matches.append(m)
 
-    plt.figure(figsize=(20, 10))
-    plt.imshow(img_matches)
+        img_matches = cv2.drawMatches(hsi_img, kp_hsi, rgb_img, kp_rgb, good_matches[:50], None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        if self.write:
+            plt.figure(figsize=(20, 10))
+            plt.imshow(img_matches)
+            
+            plt.savefig(f"{output_path}matches.png")
+            plt.close()
+
+        # Extract the matching keypoints
+        src_pts = np.float32([kp_hsi[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+        dst_pts = np.float32([kp_rgb[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+
+        M, mask1 = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, ransacReprojThreshold=5,confidence=0.995, maxIters=5000)
+        N, mask2 = cv2.findHomography(dst_pts, src_pts, cv2.RANSAC, ransacReprojThreshold=5,confidence=0.995, maxIters=5000)
+
+        # Transform
+        aligned_hsi = cv2.warpPerspective(hsi_img, M, (rgb_img.shape[1], rgb_img.shape[0]))
+        aligned_rgb = cv2.warpPerspective(rgb_img, N, (hsi_img.shape[1], hsi_img.shape[0]))
+
+        if self.write:
+        # Save the aligned image
+            cv2.imwrite(f"{output_path}aligned_hsi.png", aligned_hsi)
+            cv2.imwrite(f"{output_path}aligned_rgb.png", aligned_rgb)
+
+            # blend images
+            overlay_img = cv2.addWeighted(hsi_img, 0.5, aligned_rgb, 0.5, 0)
+            
+            cv2.imwrite(f"{output_path}overlay.png", overlay_img)
+        self.hr_transform = M
+        self.rh_transform = N
+        
+    def find_overlap(self):
+        """Generates h_mask and r_mask
+
+        Args:
+            direction (int, optional): _description_. Defaults to 1.
+
+        Returns:
+            _type_: _description_
+        """
+        A_points = [0, self.hsi_image.shape[1]-1, 0, self.hsi_image.shape[0]-1]
+        B_points = [0, self.rgb_image.shape[1]-1, 0, self.rgb_image.shape[0]-1]
+        
+        A_corners = np.array([
+            [A_points[0], A_points[2], 1.0], #x0, y0
+            [A_points[1], A_points[2], 1.0], #x1, y0
+            [A_points[1], A_points[3], 1.0], #x1, y1
+            [A_points[0], A_points[3], 1.0]  #x0, y1
+        ])
+        B_corners = np.array([
+            [B_points[0], B_points[2], 1.0], #x0, y0
+            [B_points[1], B_points[2], 1.0], #x1, y0
+            [B_points[1], B_points[3], 1.0], #x1, y1
+            [B_points[0], B_points[3], 1.0]  #x0, y1
+        ])
+
+        B_corners_warped_homogeneous = (self.rh_transform @ B_corners.T.astype(np.float32)).T
+        B_corners_warped = (B_corners_warped_homogeneous[:, :2] / B_corners_warped_homogeneous[:, 2:3])
+        
+        B_corners_warped = order_points_clockwise(B_corners_warped)
+        
+        A_corners_warped_homogeneous = (self.hr_transform @ A_corners.T.astype(np.float32)).T
+        A_corners_warped = (A_corners_warped_homogeneous[:, :2] / A_corners_warped_homogeneous[:, 2:3])
+        
+        A_corners_warped = order_points_clockwise(A_corners_warped)
+        
+        adjust_x_hsi = -np.min(np.hstack((B_corners_warped[:, 0], A_corners[:, 0]))) #find negative extent of corners
+        adjust_y_hsi = -np.min(np.hstack((B_corners_warped[:, 1], A_corners[:, 1])))
+        
+        width_hsi = np.max([B_corners_warped[:,0], A_corners[:,0]]) - np.min([B_corners_warped[:,0], A_corners[:,0]]) #Mask dimensions to fit entire projection
+        height_hsi = np.max([B_corners_warped[:,1], A_corners[:,1]]) - np.min([B_corners_warped[:,1], A_corners[:,1]])
+        
+        assert width_hsi < 20000 and height_hsi < 20000, f"Projection error"
+        
+        B_corners_warped[:] += [adjust_x_hsi, adjust_y_hsi]
+        
+        mask_ext_hsi = np.zeros(shape=(height_hsi, width_hsi), dtype=np.uint8)
+        mask_ext_hsi = cv2.fillPoly(mask_ext_hsi, [B_corners_warped], 1)
+        self.hsi_mask = mask_ext_hsi[adjust_y_hsi:adjust_y_hsi+A_points[3], adjust_x_hsi:adjust_x_hsi+A_points[1]].copy()
+        
+        adjust_x_rgb = -np.min(np.hstack((A_corners_warped[:, 0], B_corners[:, 0]))) #find negative extent of corners
+        adjust_y_rgb = -np.min(np.hstack((A_corners_warped[:, 1], B_corners[:, 1])))
+        
+        width_rgb = np.max([A_corners_warped[:,0], B_corners[:,0]]) - np.min([A_corners_warped[:,0], B_corners[:,0]]) #Mask dimensions to fit entire projection
+        height_rgb = np.max([A_corners_warped[:,1], B_corners[:,1]]) - np.min([A_corners_warped[:,1], B_corners[:,1]])
+        
+        assert width_rgb < 20000 and height_rgb < 20000, f"Projection error"
+        
+        A_corners_warped[:] += [adjust_x_rgb, adjust_y_rgb]
+        
+        mask_ext_rgb = np.zeros(shape=(height_rgb, width_rgb), dtype=np.uint8)
+        mask_ext_rgb = cv2.fillPoly(mask_ext_rgb, [A_corners_warped], 1)
+        self.rgb_mask = mask_ext_rgb[adjust_y_rgb:adjust_y_rgb+B_points[3], adjust_x_rgb:adjust_x_rgb+B_points[1]].copy()
+        
+    def crop_hsi(self):
+        """Find the bounding box [x_min, x_max, y_min, y_max] of a binary mask."""
     
-    plt.savefig(f"{output_path}matches.png")
-    plt.close()
+        # Find nonzero pixel locations
+        rows = np.any(self.hsi_mask, axis=1)  # Check where rows have nonzero pixels
+        cols = np.any(self.hsi_mask, axis=0)  # Check where columns have nonzero pixels
 
-    # Extract the matching keypoints
-    src_pts = np.float32([kp_hsi[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-    dst_pts = np.float32([kp_rgb[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+        # Get min/max indices
+        x_min, x_max = np.where(rows)[0][[0, -1]]
+        y_min, y_max = np.where(cols)[0][[0, -1]]
 
-    M, mask1 = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, ransacReprojThreshold=5,confidence=0.995, maxIters=5000)
-    N, mask2 = cv2.findHomography(dst_pts, src_pts, cv2.RANSAC, ransacReprojThreshold=5,confidence=0.995, maxIters=5000)
-    
-    inliers = mask1.ravel() == 1
-    outliers = mask1.ravel() == 0
-    # Checking how many matches are outliers
-    #print(f"{np.sum(inliers)} inliers and {np.sum(outliers)} outliers")
+        self.hsi_image = self.hsi_image[x_min:x_max,y_min:y_max].copy()
+        self.hsi_limits = np.array([x_min, x_max, y_min, y_max]) #need to pass limits back to fusion module
 
-    # Transform
-    aligned_hsi = cv2.warpPerspective(hsi_img, M, (rgb_img.shape[1], rgb_img.shape[0]))
-    aligned_rgb = cv2.warpPerspective(rgb_img, N, (hsi_img.shape[1], hsi_img.shape[0]))
-
-    # Save the aligned image
-    cv2.imwrite(f"{output_path}aligned_hsi.png", aligned_hsi)
-    cv2.imwrite(f"{output_path}aligned_rgb.png", aligned_rgb)
-
-    # blend images
-    overlay_img = cv2.addWeighted(hsi_img, 0.5, aligned_rgb, 0.5, 0)
-    
-    cv2.imwrite(f"{output_path}overlay.png", overlay_img)
-    return M, N
-
-def get_pixels(pixel_bounds, rgb_bounds, transform_r2h, transform_h2r): #THIS WHOLE FUNCTION IS A MESS AND SHOULD PROBABLY BE REWRITTEN
+def get_pixels(pixel_bounds, rgb_bounds, transform_r2h, r_mask, h_mask): #THIS WHOLE FUNCTION IS A MESS AND SHOULD PROBABLY BE REWRITTEN
     """Finds spatial transform between HSI and RGB section.
 
     Args:
@@ -72,9 +163,6 @@ def get_pixels(pixel_bounds, rgb_bounds, transform_r2h, transform_h2r): #THIS WH
     Returns:
         tuple (np.array, np.array, np.array, np.array): (spatial transform, rgb bounds [xmin, xmax, ymin, ymax], hsi overlap mask, rgb overlap mask)
     """
-    
-    h_mask = find_overlap(pixel_bounds, rgb_bounds, transform_r2h)
-    r_mask = find_overlap(rgb_bounds, pixel_bounds, transform_h2r)
     
     rgb_min_x, rgb_max_x, rgb_min_y, rgb_max_y = find_edges(r_mask)
     
@@ -111,21 +199,28 @@ def full_transform(rgb_img, hsi_img):
     transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/") #find both transforms for full images
     hsi_points = np.array([0, hsi_img.shape[1]-1, 0, hsi_img.shape[0]-1])
     rgb_points = np.array([0, rgb_img.shape[1]-1, 0, rgb_img.shape[0]-1])
-    util.plot_transforms(hsi_points,rgb_points,transform_r2h)
-    #print(f"hsi_points: {hsi_points}\nrgb_points: {rgb_points}")
     h_mask = find_overlap(hsi_points,rgb_points,transform_r2h) #find hsi mask of overlapped area
     hsi_limits = find_edges(h_mask) #find x/y limits of overlapped area
     hsi_img = hsi_img[hsi_limits[0]:hsi_limits[1],hsi_limits[2]:hsi_limits[3]].copy() #crop rest
     hsi_limits = [0,hsi_img.shape[1]-1,0,hsi_img.shape[0]-1] #redefine limits
     transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/") #find both transforms for cropped HSI
-    #print(f"rgb_points: {rgb_points}\nhsi_points: {hsi_limits}")
     r_mask = find_overlap(rgb_points,hsi_limits,transform_h2r) #find RGB mask of overlapped area
-    rgb_limits = find_edges(r_mask) #find x/y limits of overlapped area
-    util.plot_transforms(rgb_points,hsi_limits,transform_h2r)
-    plt.imshow(r_mask)
+    h_mask = find_overlap(hsi_limits, rgb_points, transform_r2h)
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+
+    axes[0].imshow(h_mask, cmap='gray')
+    axes[0].set_title('h_mask (Pixel to RGB)')
+
+    axes[1].imshow(r_mask, cmap='gray')
+    axes[1].set_title('r_mask (RGB to Pixel)')
+
+    # Remove axis labels for better clarity
+    for ax in axes:
+        ax.axis('off')
+
     plt.show()
-    os._exit(0)
-    return hsi_limits, rgb_limits, transform_h2r, transform_r2h
+    rgb_limits = find_edges(r_mask) #find x/y limits of overlapped area
+    return hsi_limits, rgb_limits, transform_h2r, transform_r2h, h_mask, r_mask
 
 def find_overlap(A_points: np.ndarray, B_points: np.ndarray, transform: np.ndarray) -> np.ndarray: #should probably be extended to not assume origin = (0,0)
     """Returns mask of area of A that is covered by B
@@ -138,6 +233,12 @@ def find_overlap(A_points: np.ndarray, B_points: np.ndarray, transform: np.ndarr
     Returns:
         np.array: (n,2) where n is the number of points defining overlap shape, each point defined by (x,y) in A coordinates
     """
+    A_corners = np.array([
+        [A_points[0], A_points[2]], #x0, y0
+        [A_points[1], A_points[2]], #x1, y0
+        [A_points[1], A_points[3]], #x1, y1
+        [A_points[0], A_points[3]]
+    ])
     B_corners = np.array([
         [B_points[0], B_points[2], 1.0], #x0, y0
         [B_points[1], B_points[2], 1.0], #x1, y0
@@ -151,24 +252,21 @@ def find_overlap(A_points: np.ndarray, B_points: np.ndarray, transform: np.ndarr
     B_corners_warped[:, 0] -= A_points[0]  # Adjust x
     B_corners_warped[:, 1] -= A_points[2]  # Adjust y
     
-    poly_corners = []
+    B_corners_warped = order_points_clockwise(B_corners_warped)
     
-    for i in range(B_corners_warped.shape[0]):
-        start_coord = B_corners_warped[i]
-        if i + 1 == B_corners_warped.shape[0]:
-            end_coord = B_corners_warped[0]
-        else:
-            end_coord = B_corners_warped[i+1]
-        segment_intersections = find_intersect(A_points, start_coord, end_coord)
-        poly_corners.extend(segment_intersections)
-    poly_corners = np.array(poly_corners, dtype=np.int32)
-    poly_corners = order_points_clockwise(poly_corners)
+    adjust_x = -np.min(np.hstack((B_corners_warped[:, 0], A_corners[:, 0]))) #find negative extent of corners
+    adjust_y = -np.min(np.hstack((B_corners_warped[:, 1], A_corners[:, 1])))
     
-    poly_corners = poly_corners.reshape((-1, 1, 2))
-    mask = np.zeros((A_points[3]-A_points[2]+1, A_points[1]-A_points[0]+1), dtype=np.uint8)
-    print(f"\n===OVERLAP===\npoly corners: {poly_corners}\n mask size: {mask.shape}\nWarped corners = {B_corners_warped}")
-    mask = cv2.fillPoly(mask, [poly_corners], 1)
-    return mask
+    width = np.max([B_corners_warped[:,0], A_corners[:,0]]) - np.min([B_corners_warped[:,0], A_corners[:,0]]) #Mask dimensions to fit entire projection
+    height = np.max([B_corners_warped[:,1], A_corners[:,1]]) - np.min([B_corners_warped[:,1], A_corners[:,1]])
+    
+    assert width < 20000 and height < 20000, f"Projection error"
+    
+    B_corners_warped[:] += [adjust_x, adjust_y]
+    
+    mask_ext = np.zeros(shape=(height, width), dtype=np.uint8)
+    mask_ext = cv2.fillPoly(mask_ext, [B_corners_warped], 1)
+    return mask_ext[adjust_y:adjust_y+A_points[3], adjust_x:adjust_x+A_points[1]].copy()
 
 def find_edges(mask) -> tuple:
     """Find the bounding box [x_min, x_max, y_min, y_max] of a binary mask."""

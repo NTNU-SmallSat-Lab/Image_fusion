@@ -83,10 +83,8 @@ class Fusion:
                 
                 
         def get_transform(self):
-                self.h_active_area, self.r_active_area, self.transform_h2r, self.transform_r2h = full_transform(self.rgb_grayscale, self.hsi_grayscale)
+                self.h_active_area, self.r_active_area, self.transform_h2r, self.transform_r2h, self.h_mask, self.r_mask = full_transform(self.rgb_grayscale, self.hsi_grayscale)
                 self.full_arr = self.full_arr[self.h_active_area[0]:self.h_active_area[1],self.h_active_area[2]:self.h_active_area[3]].copy()
-                print(self.h_active_area)
-                os._exit(0)
                 
         def read_config(self):
                 with open("config.txt", 'r') as file:
@@ -184,7 +182,7 @@ class Fusion:
                 start = time.time()
                 final_cube_shape = (self.r_active_area[1]-self.r_active_area[0], self.r_active_area[3]-self.r_active_area[2], 112)
                 self.upscaled_datacube = np.memmap("Upscaled_cube.dat", dtype=np.float32, mode='w+', shape=final_cube_shape)
-                #~1.1 billion pixel values on upscaled cube
+                #~1.1E9 pixel values on upscaled cube
                 r_limits = np.array([0, self.rgb_img.shape[0], 0, self.rgb_img.shape[1]])
                 done = False
                 y = 100
