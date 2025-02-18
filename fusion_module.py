@@ -7,7 +7,7 @@ from CNMF import CNMF, Get_VCA
 import loader as ld
 import time
 import CPPA as ppa
-from spatial_transform import full_transform, get_pixels, prepare_pixel_data, rebuild_data
+from spatial_transform import spatial_transform, get_pixels, prepare_pixel_data, rebuild_data
 import json
 import cv2
 import matplotlib.pyplot as plt
@@ -30,7 +30,7 @@ class Fusion:
                         self.arr = cv2.normalize(util.remove_darkest(self.full_arr), None, 0, 255, cv2.NORM_MINMAX)
                 else:
                         self.arr = cv2.normalize(self.full_arr, None, 0, 255, cv2.NORM_MINMAX)
-                self.get_transform()
+                self.spatial = spatial_transform(self.hsi_grayscale, self.rgb_grayscale)
                 if self.type == "CNMF":
                         self.w_init = Get_VCA(self.lowres_downsampled, self.endmember_n)
                         self.h_init = np.ones(shape=(self.endmember_n, self.lowres_downsampled.shape[0]*self.lowres_downsampled.shape[1]))
@@ -79,12 +79,6 @@ class Fusion:
                 # Convert to Grayscale (Ensure Correct Color Space)
                 self.hsi_grayscale = cv2.cvtColor(hsi_rgb, cv2.COLOR_RGB2GRAY)
                 self.rgb_grayscale = cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2GRAY)
-
-                
-                
-        def get_transform(self):
-                self.h_active_area, self.r_active_area, self.transform_h2r, self.transform_r2h, self.h_mask, self.r_mask = full_transform(self.rgb_grayscale, self.hsi_grayscale)
-                self.full_arr = self.full_arr[self.h_active_area[0]:self.h_active_area[1],self.h_active_area[2]:self.h_active_area[3]].copy()
                 
         def read_config(self):
                 with open("config.txt", 'r') as file:
@@ -180,46 +174,48 @@ class Fusion:
                                 
         def fuse_image(self):
                 start = time.time()
-                final_cube_shape = (self.r_active_area[1]-self.r_active_area[0], self.r_active_area[3]-self.r_active_area[2], 112)
+                final_cube_shape = (self.rgb_img.shape[1], self.rgb_img.shape[0], 112)
+                print(final_cube_shape)
                 self.upscaled_datacube = np.memmap("Upscaled_cube.dat", dtype=np.float32, mode='w+', shape=final_cube_shape)
                 #~1.1E9 pixel values on upscaled cube
-                r_limits = np.array([0, self.rgb_img.shape[0], 0, self.rgb_img.shape[1]])
                 done = False
-                y = 100
+                y = 0
                 while not done:
                         done_row = False
-                        x = 100
+                        x = 0
                         while not done_row:
-                                h_limits = np.array([x, x+self.patch_size, y, y+self.patch_size])
-                                hsi_patch = self.full_arr[x:x+self.patch_size,y:y+self.patch_size].copy()
+                                rgb_limits = np.array([x, x+self.patch_size, y, y+self.patch_size])
+                                rgb_mask, hsi_mask, hsi_limits = self.spatial.get_mask_subset(rgb_limits)
+                                hsi_patch = self.full_arr[hsi_limits[0]:hsi_limits[1],hsi_limits[2]:hsi_limits[3]].copy()
                                 """util.plot_masks([0, self.full_arr.shape[0], 0, self.full_arr.shape[1]], 
                                                 r_limits, 
                                                 self.transform_h2r, 
                                                 self.transform_r2h,
                                                 h_limits)"""
                                 #util.plot_transforms(r_limits,h_limits,self.transform_h2r)
-                                spatial_transform, rgb_limits, hsi_patch_mask, rgb_patch_mask = get_pixels(h_limits, 
-                                                                                                           r_limits, 
-                                                                                                           self.transform_r2h, 
-                                                                                                           self.transform_h2r
-                                                                                                           )
-                                if np.sum(rgb_patch_mask) != 0:
+                                spatial_transform =  get_pixels(rgb_mask,
+                                                                hsi_mask,
+                                                                self.spatial.rh_transform,
+                                                                [x,y],
+                                                                [hsi_limits[0],hsi_limits[2]]
+                                                                )
+                                if np.sum(rgb_mask) != 0:
                                         rgb_patch = self.rgb_img[rgb_limits[0]:rgb_limits[1], rgb_limits[2]:rgb_limits[2]]
-                                        hsi_patch, rgb_patch = prepare_pixel_data(hsi_patch, rgb_patch, hsi_patch_mask, rgb_patch_mask)
+                                        hsi_patch, rgb_patch = prepare_pixel_data(hsi_patch, rgb_patch, hsi_mask, rgb_mask)
                                         upscaled_data = self.fuse(hsi_patch, 
                                                                    rgb_patch, 
                                                                    spatial_transform)
-                                        upscaled_patch = rebuild_data(upscaled_data,rgb_patch_mask)
+                                        upscaled_patch = rebuild_data(upscaled_data,rgb_mask)
                                         self.upscaled_datacube[rgb_limits[0]:rgb_limits[1],
-                                                               rgb_limits[2]:rgb_limits[2],:][rgb_patch_mask == 1] = upscaled_patch
+                                                               rgb_limits[2]:rgb_limits[2],:][rgb_mask == 1] = upscaled_patch
                                         self.upscaled_datacube.flush()
                                 print(f"Done patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size})")
                                 x += self.patch_size
                                 print(f"x: {x} > hsi.shape[0]: {self.full_arr.shape[0] - self.patch_size} is {x > self.full_arr.shape[0] - self.patch_size}")
-                                if x > self.full_arr.shape[0] - self.patch_size:
+                                if x > rgb_limits[1] - self.patch_size:
                                         done_row = True
                         y += self.patch_size
-                        if y > self.full_arr.shape[1] - self.patch_size:
+                        if y > rgb_limits[3] - self.patch_size:
                                 done = True
                 elapsed = time.time()-start
                 print(f"Total run over in {elapsed} seconds, final datacube size is {self.upscaled_datacube.nbytes}")
