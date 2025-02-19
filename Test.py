@@ -1,14 +1,32 @@
-from spatial_transform import find_overlap
+from spatial_transform import get_distribution
 import numpy as np
 import matplotlib.pyplot as plt
 
-limits = [0, 10, 0, 10]
-limits_2 = [-5, 5, 4, 12]
-transform = np.array([[1, 0, 0],
-                      [0, 1, 0],
-                      [0, 0, 1]])
+def create_gaussian_array(size=100, mean=0, std=1):
+    """
+    Create a 100x100 numpy array with a normalized 2D Gaussian distribution.
+    
+    Parameters:
+    size (int): The size of the square array (default: 100)
+    mean (float): Mean of the Gaussian distribution (default: 0)
+    std (float): Standard deviation of the Gaussian distribution (default: 1)
+    
+    Returns:
+    np.array: 2D normalized Gaussian array
+    """
+    x = np.linspace(-1, 1, size)
+    y = np.linspace(-1, 1, size)
+    X, Y = np.meshgrid(x, y)
+    
+    # 2D Gaussian function
+    Z = np.exp(-((X**2 + Y**2) / (2 * std**2)))
+    
+    # Normalize the Gaussian
+    Z /= np.sum(Z)
+    
+    return Z
 
-mask = find_overlap(limits, limits_2, transform)
+# Create the Gaussian array
+gaussian_array = create_gaussian_array()
 
-plt.imshow(mask)
-plt.show()
+print(np.sum(get_distribution((2.1, 2.4),gaussian_array)))

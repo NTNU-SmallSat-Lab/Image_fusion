@@ -5,7 +5,7 @@ import os
 import utilities as util
 
 class spatial_transform:
-    def __init__(self, hsi_image, rgb_image, write=True, debug = True):
+    def __init__(self, hsi_image, rgb_image, write=False, debug = False):
         self.rgb_image = rgb_image #note that these images are grayscale representations
         self.hsi_image = hsi_image #note that these images are grayscale representations
         self.h2r_transform, self.r2h_transform = None, None
@@ -13,6 +13,7 @@ class spatial_transform:
         self.hsi_limits = None
         self.write = write
         self.debug = debug
+        self.gaussian_table = create_gaussian_array()
         self.align_and_overlay()
         self.find_overlap()
         if self.debug:
@@ -35,6 +36,22 @@ class spatial_transform:
         self.crop_hsi()
         self.align_and_overlay() #find transform after cropping
         self.find_overlap()
+        if self.debug:
+            print(f"hsi mask shape: {self.hsi_mask.shape}\n rgb mask shape: {self.rgb_mask.shape}")
+            # Create a side-by-side visualization
+            fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+
+            axes[0].imshow(self.hsi_mask, cmap='gray')
+            axes[0].set_title('h_mask (Pixel to RGB)')
+
+            axes[1].imshow(self.rgb_mask, cmap='gray')
+            axes[1].set_title('r_mask (RGB to Pixel)')
+
+            # Remove axis labels for better clarity
+            for ax in axes:
+                ax.axis('off')
+
+            plt.show()
     
     def align_and_overlay(self):
         rgb_image = cv2.GaussianBlur(self.rgb_image, (15, 15), 0)
@@ -190,106 +207,196 @@ class spatial_transform:
         hsi_points = (hsi_points_homogenous[:, :2] / hsi_points_homogenous[:, 2:3])
         
         hsi_limits = np.array([np.clip(np.min(hsi_points[:,0]),0,self.hsi_image.shape[1]), 
-                               np.clip(np.max(hsi_points[:,0]),0,self.hsi_image.shape[1]),
+                               np.clip(np.max(hsi_points[:,0]+1),0,self.hsi_image.shape[1]),
                                np.clip(np.min(hsi_points[:,1]),0,self.hsi_image.shape[0]), 
-                               np.clip(np.max(hsi_points[:,1]),0,self.hsi_image.shape[0]),
+                               np.clip(np.max(hsi_points[:,1]+1),0,self.hsi_image.shape[0]),
                                 ]).astype(np.int32)
         
         hsi_mask_subset = self.hsi_mask[hsi_limits[0]:hsi_limits[1],hsi_limits[2]:hsi_limits[3]]
+        print(f"hsi_mask_sum: {np.sum(hsi_mask_subset)}\nrgb_mask_sum: {np.sum(rgb_mask_subset)}")
+        
+        print(f"hsi mask shape: {hsi_mask_subset.shape}\n rgb mask shape: {rgb_mask_subset.shape}")
+        # Create a side-by-side visualization
+        """fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+
+        axes[0].imshow(hsi_mask_subset, cmap='gray')
+        axes[0].set_title('h_mask (Pixel to RGB)')
+
+        axes[1].imshow(rgb_mask_subset, cmap='gray')
+        axes[1].set_title('r_mask (RGB to Pixel)')
+
+        # Remove axis labels for better clarity
+        for ax in axes:
+            ax.axis('off')
+
+        plt.show()"""
         return rgb_mask_subset, hsi_mask_subset, hsi_limits
+    
+    def get_pixels2(self, rgb_limits):
+        rgb_x, rgb_y = rgb_limits[1]-rgb_limits[0], rgb_limits[3]-rgb_limits[2]
+        rgb_pixels = rgb_x*rgb_y
+        hsi_limits = self.get_extent(rgb_limits)
+        print(f"hsi lims: {hsi_limits}")
+        hsi_x, hsi_y = hsi_limits[1]-hsi_limits[0], hsi_limits[3]-hsi_limits[2]
+        if hsi_x == 0 or hsi_y == 0:
+            return None, None
+        hsi_pixels = hsi_x*hsi_y
+        spatial_transform = np.zeros(shape=(hsi_pixels, rgb_pixels))
+        
+        for i in range(rgb_x):
+            for j in range(rgb_y):
+                rgb_coords = np.array([i+rgb_limits[0]+0.5, j+rgb_limits[1]+0.5, 1.0])
+                hsi_coords_homogenous = (self.rh_transform@rgb_coords.T).T
+                hsi_coords = hsi_coords_homogenous[:2] / hsi_coords_homogenous[2:3] - np.array([hsi_limits[0], hsi_limits[2]])
+                hsi_distribution = self.get_distribution(hsi_coords_homogenous[:2])
+                hsi_coords = np.round(hsi_coords, decimals=0).astype(np.int32)
+                rgb_index = i+j*rgb_x
+                for k in range(hsi_distribution.shape[0]):
+                    for l in range(hsi_distribution.shape[1]):
+                        try:
+                            hsi_index = (hsi_coords[0]+k-2)+(hsi_coords[1]+l-2)*hsi_x
+                            spatial_transform[hsi_index, rgb_index] = hsi_distribution[k,l]
+                        except:
+                            continue
 
-def get_pixels(rgb_mask, hsi_mask, rh_transform, rgb_origin, hsi_origin): #THIS WHOLE FUNCTION IS A MESS AND SHOULD PROBABLY BE REWRITTEN
-    """Finds spatial transform between HSI and RGB section.
+        ###normalization_weights = np.sum(spatial_transform, axis=0)
+        ####spatial_transform = spatial_transform/normalization_weights
+        
+        return spatial_transform, hsi_limits
+        
+        
+    def get_pixels(self, rgb_mask, hsi_mask, rgb_origin, hsi_origin): #THIS IS TERRIBLE CODE
+        """Finds spatial transform between HSI and RGB section.
 
-    Args:
-        pixel_bounds (np.array): point coords that define HSI active area
-        rgb_bounds (np.array): point coords that define entire RGB image
-        transform_r2h (np.array): homogenous transform from RGB->HSI
-        transform_h2r (np.array): homogenous transform from HSI->RGB
+        Args:
+            pixel_bounds (np.array): point coords that define HSI active area
+            rgb_bounds (np.array): point coords that define entire RGB image
+            transform_r2h (np.array): homogenous transform from RGB->HSI
+            transform_h2r (np.array): homogenous transform from HSI->RGB
 
-    Returns:
-        tuple (np.array, np.array, np.array, np.array): (spatial transform, rgb bounds [xmin, xmax, ymin, ymax], hsi overlap mask, rgb overlap mask)
+        Returns:
+            tuple (np.array, np.array, np.array, np.array): (spatial transform, rgb bounds [xmin, xmax, ymin, ymax], hsi overlap mask, rgb overlap mask)
+        """
+        
+        rgb_pixels = np.sum(rgb_mask)
+        hsi_pixels = np.sum(hsi_mask)
+        
+        spatial_transform = np.zeros(shape=(hsi_pixels, rgb_pixels))
+        hsi_skipped = np.zeros(shape=hsi_mask.shape[0]*hsi_mask.shape[1])
+        skipped = 0
+        for i in range(hsi_mask.shape[0]):
+            for j in range(hsi_mask.shape[1]):
+                if hsi_mask[i,j] == 0:
+                    skipped += 1
+                    hsi_skipped[i+j*hsi_mask.shape[0]] = skipped
+        skipped = 0
+        
+        for i in range(rgb_mask.shape[0]):
+            for j in range(rgb_mask.shape[1]):
+                if rgb_mask[i,j] == 1:
+                    rgb_coords = np.array([i+rgb_origin[0]+0.5, j+rgb_origin[1]+0.5, 1.0])
+                    hsi_coords_homogenous = (self.rh_transform@rgb_coords.T).T
+                    hsi_distribution = self.get_distribution(hsi_coords_homogenous[:2])
+                    hsi_coords = np.round((hsi_coords_homogenous[:2] / hsi_coords_homogenous[2:3]) - hsi_origin, decimals=0).astype(np.int32)
+                    rgb_index = i+j*rgb_mask.shape[0]-skipped
+                    for k in range(hsi_distribution.shape[0]):
+                        for l in range(hsi_distribution.shape[1]):
+                            hsi_x = hsi_coords[0]+k-2
+                            hsi_y = hsi_coords[1]+l-2
+                            hsi_index = hsi_x+hsi_y*hsi_mask.shape[0]
+                            if hsi_mask[hsi_x,hsi_y] == 1:
+                                hsi_index -= hsi_skipped[hsi_index]
+                                assert hsi_index < spatial_transform.shape[0], f"===SPATIAL TRANSFORM===\nhsi coords: {hsi_x, hsi_y}\n hsi index: {hsi_index}\nSpatial transform: {spatial_transform.shape}"
+                                spatial_transform[hsi_index, rgb_index] = hsi_distribution[k,l]
+                    
+                else:
+                    skipped += 1
+            
+            
+            
+        #assert np.all(np.any(spatial_transform, axis=0)), "Unused HSI pixel in transform"
+        normalization_weights = np.sum(spatial_transform, axis=0)
+        spatial_transform = spatial_transform/normalization_weights
+        
+        return spatial_transform
+
+    def get_distribution(self, coords):
+        hsi_rem = np.remainder(coords, 1.0)
+        assert np.all((0.0 <= hsi_rem) & (hsi_rem < 1.0)), f"Error getting pixel distribution, hsi_rem: {hsi_rem}"
+        dx_0, dy_0 = np.clip(0.5-hsi_rem[0], a_min=0, a_max=0.5), np.clip(0.5-hsi_rem[1], a_min=0, a_max=0.5) #there is definitely a better way to do this
+        dx_1, dy_1 = 1-hsi_rem[0]//0.5, 1-hsi_rem[1]//0.5
+        dx_0_indices, dy_0_indices = np.array([0, np.round(dx_0, decimals=2)*100], dtype=np.int32), np.array([0, np.round(dy_0, decimals=2)*100], dtype=np.int32)
+        dx_1_indices, dy_1_indices = np.array([np.round(dx_0, decimals=2)*100, np.round(dx_1, decimals=2)*100], dtype=np.int32), np.array([np.round(dy_0, decimals=2)*100, np.round(dy_1, decimals=2)*100], dtype=np.int32)
+        dx_2_indices, dy_2_indices = np.array([np.round(dx_1, decimals=2)*100, 100], dtype=np.int32), np.array([np.round(dy_1, decimals=2)*100, 100], dtype=np.int32)
+        distribution = np.zeros(shape=(3,3))
+        distribution[0,0] = np.sum(self.gaussian_table[dx_0_indices[0]:dx_0_indices[1],dy_0_indices[0]:dy_0_indices[1]])
+        distribution[1,0] = np.sum(self.gaussian_table[dx_1_indices[0]:dx_1_indices[1],dy_0_indices[0]:dy_0_indices[1]])
+        distribution[2,0] = np.sum(self.gaussian_table[dx_2_indices[0]:dx_2_indices[1],dy_0_indices[0]:dy_0_indices[1]])
+        distribution[0,1] = np.sum(self.gaussian_table[dx_0_indices[0]:dx_0_indices[1],dy_1_indices[0]:dy_1_indices[1]])
+        distribution[1,1] = np.sum(self.gaussian_table[dx_1_indices[0]:dx_1_indices[1],dy_1_indices[0]:dy_1_indices[1]])
+        distribution[2,1] = np.sum(self.gaussian_table[dx_2_indices[0]:dx_2_indices[1],dy_1_indices[0]:dy_1_indices[1]])
+        distribution[0,2] = np.sum(self.gaussian_table[dx_0_indices[0]:dx_0_indices[1],dy_2_indices[0]:dy_2_indices[1]])
+        distribution[1,2] = np.sum(self.gaussian_table[dx_1_indices[0]:dx_1_indices[1],dy_2_indices[0]:dy_2_indices[1]])
+        distribution[2,2] = np.sum(self.gaussian_table[dx_2_indices[0]:dx_2_indices[1],dy_2_indices[0]:dy_2_indices[1]])
+        
+        return distribution
+    
+    def get_extent(self, limits):
+        RGB_points = np.array([[limits[0], limits[2], 1.0],
+                           [limits[1], limits[2], 1.0],
+                           [limits[1], limits[3], 1.0],
+                           [limits[0], limits[3], 1.0],
+                           ])
+        HSI_points = (self.rh_transform@RGB_points.T).T
+        HSI_points = (HSI_points[:2] / HSI_points[2:3]).astype(np.int32)
+        hsi_limits = np.clip(np.array([
+                                    np.floor(np.min(HSI_points[:,0])).astype(np.int32) - 1,
+                                    np.ceil(np.max(HSI_points[:,0])).astype(np.int32) + 1,
+                                    np.floor(np.min(HSI_points[:,1])).astype(np.int32) - 1,
+                                    np.ceil(np.max(HSI_points[:,1])).astype(np.int32) + 1,
+                                    ]),
+                                a_min=np.array([0, 0, 0, 0]),
+                                a_max=np.array([self.hsi_mask.shape[0], self.hsi_mask.shape[0], self.hsi_mask.shape[1], self.hsi_mask.shape[1]])
+                            )
+        return hsi_limits
+        
+    
+def remove_unused(transform, array):
+    num_zero_entries = np.sum(np.all(transform == 0, axis=0))
+    new_array = np.zeros(shape=(array.shape[0]-num_zero_entries, array.shape[1]))
+    new_transform = np.zeros(shape=(transform.shape[0]-num_zero_entries, transform.shape[1]))
+    index = 0
+    for i in range(transform.shape[0]):
+        if not np.all(transform[i,:] == 0):
+            new_array[index,:] = array[i,:]
+            new_transform[index,:] = transform[i,:]
+            index += 1
+    assert not np.any(np.sum(new_transform, axis=0) == 0) and not np.any(np.sum(new_array) == 0), "Zeros in input data"
+    return new_transform, new_array
+
+def create_gaussian_array(size=100, mean=0, std=1):
     """
+    Create a 100x100 numpy array with a normalized 2D Gaussian distribution.
     
-    rgb_pixels = np.sum(rgb_mask)
-    hsi_pixels = np.sum(hsi_mask)
+    Parameters:
+    size (int): The size of the square array (default: 100)
+    mean (float): Mean of the Gaussian distribution (default: 0)
+    std (float): Standard deviation of the Gaussian distribution (default: 1)
     
-    spatial_transform = np.zeros(shape=(hsi_pixels, rgb_pixels))
-    skipped = 0
-    
-    for i in range(rgb_mask.shape[0]):
-        for j in range(rgb_mask.shape[1]):
-            if rgb_mask[i,j] == 1:
-                rgb_coords = np.array([i+rgb_origin[0]+0.5, j+rgb_origin[1]+0.5, 1.0])
-                hsi_coords_homogenous = (rh_transform@rgb_coords.T).T
-                hsi_distribution = get_distribution(hsi_coords_homogenous[:2])
-                hsi_coords = np.round((hsi_coords_homogenous[:2] / hsi_coords_homogenous[2:3]) - hsi_origin, decimals=0) #not good enough
-                assert hsi_mask[hsi_coords[1], hsi_coords[0]] == 1, f"\n===HSI mask mismatch===\nRGB coords: {rgb_coords[:2]}\nHSI coords: {hsi_coords}\nHSI shape: {hsi_mask.shape}"
-                
-                rgb_index = i+j*rgb_mask.shape[0]-skipped
-                hsi_index = hsi_coords[0]+hsi_coords[1]*hsi_mask.shape[0]
-                
-                spatial_transform[hsi_index, rgb_index] = 1 #not good enough
-                
-            else:
-                skipped += 1
-            
-            
-            
-    assert np.all(np.any(spatial_transform, axis=0)), "Unused HSI pixel in transform"
-    normalization_weights = np.sum(spatial_transform, axis=0)
-    spatial_transform = spatial_transform/normalization_weights
-    
-    return spatial_transform
-
-def get_distribution(coords, gaussian_table, size=(3,3)):
-    hsi_rem = np.remainder(coords, 1.0)
-    distribution = np.zeros(shape=size)
-    for i in range(size[0]):
-        for j in range(size[1]):
-            distribution[i,j] = np.sum(gaussian_table[])
-
-def project_pixel(rgb_coords, rh_transform, sigma_x, sigma_y):
-    rgb_center_points = np.array([rgb_coords[0], rgb_coords[1], 1.0])
-    hsi_center_point = (rh_transform@rgb_center_points.T).T[:2]
-    rgb_cov_matrix = 
-    
-    
-def full_transform(rgb_img, hsi_img):
-    """Finds homogenous projective transform between RGB and HSI, crops HSI to minimum size then recalculates transform.
-
-    Args:
-        rgb_img (np.array): RGB image (grayscale)
-        hsi_img (np.array): HSI image (grayscale)
     Returns:
-        tuple: (HSI_limits,RGB_limits, HSI->RGB transform, RGB->HSI transform)
+    np.array: 2D normalized Gaussian array
     """
-    transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/") #find both transforms for full images
-    hsi_points = np.array([0, hsi_img.shape[1]-1, 0, hsi_img.shape[0]-1])
-    rgb_points = np.array([0, rgb_img.shape[1]-1, 0, rgb_img.shape[0]-1])
-    h_mask = find_overlap(hsi_points,rgb_points,transform_r2h) #find hsi mask of overlapped area
-    hsi_limits = find_edges(h_mask) #find x/y limits of overlapped area
-    hsi_img = hsi_img[hsi_limits[0]:hsi_limits[1],hsi_limits[2]:hsi_limits[3]].copy() #crop rest
-    hsi_limits = [0,hsi_img.shape[1]-1,0,hsi_img.shape[0]-1] #redefine limits
-    transform_h2r, transform_r2h = align_and_overlay(hsi_img, rgb_img,"output/") #find both transforms for cropped HSI
-    r_mask = find_overlap(rgb_points,hsi_limits,transform_h2r) #find RGB mask of overlapped area
-    h_mask = find_overlap(hsi_limits, rgb_points, transform_r2h)
-    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-
-    axes[0].imshow(h_mask, cmap='gray')
-    axes[0].set_title('h_mask (Pixel to RGB)')
-
-    axes[1].imshow(r_mask, cmap='gray')
-    axes[1].set_title('r_mask (RGB to Pixel)')
-
-    # Remove axis labels for better clarity
-    for ax in axes:
-        ax.axis('off')
-
-    plt.show()
-    rgb_limits = find_edges(r_mask) #find x/y limits of overlapped area
-    return hsi_limits, rgb_limits, transform_h2r, transform_r2h, h_mask, r_mask
-
+    x = np.linspace(-1, 1, size)
+    y = np.linspace(-1, 1, size)
+    X, Y = np.meshgrid(x, y)
+    
+    # 2D Gaussian function
+    Z = np.exp(-((X**2 + Y**2) / (2 * std**2)))
+    
+    # Normalize the Gaussian
+    Z /= np.sum(Z)
+    
+    return Z
 
 def order_points_clockwise(points):
     """
@@ -321,10 +428,27 @@ def prepare_pixel_data(HSI_patch: np.ndarray, RGB_patch: np.ndarray, HSI_mask: n
     Returns:
         tuple: HSI_data_flattened, RGB_data_flattened
     """
+    print(f"hsi mask shape: {HSI_mask.shape}\n rgb mask shape: {RGB_mask.shape}")
+    # Create a side-by-side visualization
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+
+    axes[0].imshow(HSI_mask, cmap='gray')
+    axes[0].set_title('h_mask (Pixel to RGB)')
+
+    axes[1].imshow(RGB_mask, cmap='gray')
+    axes[1].set_title('r_mask (RGB to Pixel)')
+
+    # Remove axis labels for better clarity
+    for ax in axes:
+        ax.axis('off')
+
+    plt.show()
 
     skipped = 0
     HSI_output = np.zeros(shape=(np.sum(HSI_mask),HSI_patch.shape[2]))
     RGB_output = np.zeros(shape=(np.sum(RGB_mask),RGB_patch.shape[2]))
+    print(HSI_output.shape)
+    print(RGB_output.shape)
     for i in range(HSI_mask.shape[0]):
         for j in range(HSI_mask.shape[1]):
             if HSI_mask[i,j] == 0:
