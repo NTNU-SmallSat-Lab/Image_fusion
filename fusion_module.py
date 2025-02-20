@@ -27,9 +27,9 @@ class Fusion:
                 self.loops = (self.inner_loops, self.outer_loops)
                 self.load_images()
                 if self.remove_darkest:
-                        self.arr = cv2.normalize(util.remove_darkest(self.full_arr), None, 0, 255, cv2.NORM_MINMAX)
+                        self.arr = cv2.normalize(util.remove_darkest(self.full_arr), None, 0, 1, cv2.NORM_MINMAX)
                 else:
-                        self.arr = cv2.normalize(self.full_arr, None, 0, 255, cv2.NORM_MINMAX)
+                        self.arr = cv2.normalize(self.full_arr, None, 0, 1, cv2.NORM_MINMAX)
                 self.spatial = spatial_transform(self.hsi_grayscale, self.rgb_grayscale)
                 if self.type == "CNMF":
                         self.w_init = Get_VCA(self.lowres_downsampled, self.endmember_n)
@@ -37,8 +37,7 @@ class Fusion:
         
         def load_images(self):
                 # Normalize HSI Image
-                normalized = cv2.normalize(ld.load_l1b_cube(self.data_string)[150:450,:,:], None, 0, 255, cv2.NORM_MINMAX)
-                normalized = np.uint8(normalized)  # Convert to uint8 for saving
+                normalized = cv2.normalize(ld.load_l1b_cube(self.data_string)[150:450,:,:], None, 0, 1, cv2.NORM_MINMAX)
 
                 # Load RGB Image (Ensure RGB Conversion)
                 rgb_path = str(self.data_string).replace("-", "_").replace("16Z_l1b.nc", "14.png")
@@ -175,7 +174,6 @@ class Fusion:
         def fuse_image(self):
                 start = time.time()
                 final_cube_shape = (self.rgb_img.shape[1], self.rgb_img.shape[0], 112)
-                print(final_cube_shape)
                 self.upscaled_datacube = np.memmap("Upscaled_cube.dat", dtype=np.float32, mode='w+', shape=final_cube_shape)
                 #~1.1E9 pixel values on upscaled cube
                 done = False
@@ -215,8 +213,9 @@ class Fusion:
                                         continue
                                 #upscaled_patch = rebuild_data(upscaled_data,rgb_mask)
                                 upscaled_patch = upscaled_data.T.reshape(rgb_patch.shape[0], rgb_patch.shape[1], hsi_patch.shape[2])
+                                upscaled_patch = cv2.normalize(upscaled_patch, None, 0, 1.0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
                                 self.upscaled_datacube[rgb_limits[0]:rgb_limits[1],
-                                                        rgb_limits[2]:rgb_limits[3],:] += upscaled_patch
+                                                        rgb_limits[2]:rgb_limits[3],:] = upscaled_patch
                                 self.upscaled_datacube.flush()
                                 #print(f"Done patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size})")
                                 x += self.patch_size
@@ -228,7 +227,7 @@ class Fusion:
                         if y > self.rgb_img.shape[0] - self.patch_size:
                                 done = True
                 elapsed = time.time()-start
-                print(f"Total run over in {elapsed} seconds, final datacube size is {self.upscaled_datacube.nbytes}")
+                print(f"Total run over in {elapsed} seconds, final datacube size is {self.upscaled_datacube.nbytes}\n final cube shape: {final_cube_shape}")
                 plt.imshow(self.upscaled_datacube[:,:,50])
                 plt.show()
                                 

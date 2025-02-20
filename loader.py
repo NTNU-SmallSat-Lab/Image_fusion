@@ -48,7 +48,7 @@ def load_l1b_cube(string: Path, coords=[0,0,0,0], bands=[4,116]): #TODO doc
     with nc.Dataset(string, "r", format="NETCDF4") as f:
         group = f.groups["products"]
         if coords != [0,0,0,0]:
-            data = np.array(group.variables["Lt"][coords[0]:coords[1],coords[2]:coords[3],bands[0]:bands[1]], dtype=np.float64)
+            data = np.array(group.variables["Lt"][coords[0]:coords[1],coords[2]:coords[3],bands[0]:bands[1]], dtype=np.float32)
         else:
-            data = np.array(group.variables["Lt"][:,:,bands[0]:bands[1]], dtype=np.float64)
+            data = np.array(group.variables["Lt"][:,:,bands[0]:bands[1]], dtype=np.float32)
         return data
