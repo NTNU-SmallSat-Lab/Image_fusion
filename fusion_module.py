@@ -228,8 +228,11 @@ class Fusion:
                                 done = True
                 elapsed = time.time()-start
                 print(f"Total run over in {elapsed} seconds, final datacube size is {self.upscaled_datacube.nbytes}\n final cube shape: {final_cube_shape}")
-                plt.imshow(self.upscaled_datacube[:,:,50])
-                plt.show()
+                cv2.imwrite("output/recent_band_30.png", (self.upscaled_datacube[:,:,27]*255).astype(np.uint8))
+                cv2.imwrite("output/recent_band_50.png", (self.upscaled_datacube[:,:,47]*255).astype(np.uint8))
+                cv2.imwrite("output/recent_band_70.png", (self.upscaled_datacube[:,:,67]*255).astype(np.uint8))
+                cv2.imwrite("output/recent_rgb_base.png", cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2BGR))
+                cv2.imwrite("output/recent_hsi_gray.png", self.hsi_grayscale)
                                 
                                 
 def run(name):
