@@ -5,10 +5,10 @@ import os
 import utilities as util
 
 class spatial_transform:
-    def __init__(self, hsi_image, rgb_image, write=False, debug = False):
+    def __init__(self, hsi_image, rgb_image, write=True, debug = False):
         self.rgb_image = rgb_image #note that these images are grayscale representations
         self.hsi_image = hsi_image #note that these images are grayscale representations
-        self.h2r_transform, self.r2h_transform = None, None
+        self.hr_transform, self.rh_transform = None, None
         self.hsi_mask, self.rgb_mask = None, None
         self.hsi_limits = None
         self.write = write
@@ -233,17 +233,58 @@ class spatial_transform:
         return rgb_mask_subset, hsi_mask_subset, hsi_limits
     
     def get_pixels2(self, rgb_limits):
+        debug = True
         rgb_x, rgb_y = rgb_limits[1]-rgb_limits[0], rgb_limits[3]-rgb_limits[2]
         rgb_pixels = rgb_x*rgb_y
-        hsi_limits = self.get_extent(rgb_limits)
-        print(f"hsi lims: {hsi_limits}")
-        hsi_x, hsi_y = hsi_limits[1]-hsi_limits[0], hsi_limits[3]-hsi_limits[2]
-        if hsi_x == 0 or hsi_y == 0:
+        #hsi_limits = self.get_extent(rgb_limits)
+        #hsi_x, hsi_y = hsi_limits[1]-hsi_limits[0], hsi_limits[3]-hsi_limits[2]
+        #if hsi_x == 0 or hsi_y == 0:
+        #    return None, None
+        #hsi_pixels = hsi_x*hsi_y
+        #spatial_transform = np.zeros(shape=(hsi_pixels, rgb_pixels))
+        #failed = 0
+        #success = 0
+        
+        x_min, x_max, y_min, y_max = rgb_limits
+
+        # Generate pixel centers for x and y
+        x_coords = np.arange(x_min, x_max) + 0.5
+        y_coords = np.arange(y_min, y_max) + 0.5
+
+        # Create meshgrid and flatten in row-major order
+        x_grid, y_grid = np.meshgrid(x_coords, y_coords, indexing='xy')
+
+        # Stack into (N, 3) where each row is [x, y, 1]
+        full_coords = np.column_stack([x_grid.ravel(), y_grid.ravel(), np.ones(x_grid.size)])
+        hsi_centers = (self.rh_transform@full_coords.T).T
+        hsi_centers = hsi_centers[:,:2] / hsi_centers[:,2:3]
+        
+        hsi_limits = np.array([np.floor(np.min(hsi_centers[:,0])-1),
+                               np.ceil(np.max(hsi_centers[:,0])+1),
+                               np.floor(np.min(hsi_centers[:,1])-1),
+                               np.ceil(np.max(hsi_centers[:,1])+1),
+                               ]).astype(np.uint32)
+        
+        if np.any(np.min(hsi_limits) < 0) or np.any(np.max(hsi_limits, axis=0) > np.array([self.hsi_mask.shape[0], self.hsi_mask.shape[1]])):
             return None, None
+        hsi_x, hsi_y = hsi_limits[1]-hsi_limits[0], hsi_limits[3]-hsi_limits[2]
+        hsi_indices = hsi_centers.astype(np.int32)-np.array([hsi_limits[0], hsi_limits[2]],dtype=np.int32)
+        
         hsi_pixels = hsi_x*hsi_y
         spatial_transform = np.zeros(shape=(hsi_pixels, rgb_pixels))
         
-        for i in range(rgb_x):
+        for i in range(hsi_indices.shape[0]):
+            rgb_coords = full_coords[i,:2].astype(np.uint32)
+            hsi_distribution = self.get_distribution(hsi_centers[i])
+            for k in range(hsi_distribution.shape[0]):
+                for l in range(hsi_distribution.shape[1]):
+                    hsi_coords = hsi_indices[i] + np.array([k-1, l-1])
+                    assert 0 <= hsi_coords[0] <= hsi_x and 0 <= hsi_coords[1] <= hsi_y, f"attempting to write to unmapped HSI pixel\nhsi_coords: {hsi_coords}\nhsi_limits: {hsi_limits}"
+                    rgb_index = (rgb_coords[0]-rgb_limits[0]) + (rgb_coords[1]-rgb_limits[2])*rgb_x
+                    hsi_index = hsi_coords[0] + hsi_coords[1]*hsi_x
+                    spatial_transform[hsi_index, rgb_index] = hsi_distribution[k,l]
+        
+        """for i in range(rgb_x): #Vectorize this function
             for j in range(rgb_y):
                 rgb_coords = np.array([i+rgb_limits[0]+0.5, j+rgb_limits[1]+0.5, 1.0])
                 hsi_coords_homogenous = (self.rh_transform@rgb_coords.T).T
@@ -253,30 +294,29 @@ class spatial_transform:
                 rgb_index = i+j*rgb_x
                 for k in range(hsi_distribution.shape[0]):
                     for l in range(hsi_distribution.shape[1]):
-                        try:
-                            hsi_index = (hsi_coords[0]+k-2)+(hsi_coords[1]+l-2)*hsi_x
-                            spatial_transform[hsi_index, rgb_index] = hsi_distribution[k,l]
-                        except:
-                            continue
-
-        ###normalization_weights = np.sum(spatial_transform, axis=0)
-        ####spatial_transform = spatial_transform/normalization_weights
-        
+                        hsi_coords += np.array([k-1,l-1])
+                        hsi_index = hsi_coords[0]+hsi_coords[1]*hsi_x
+                        if 0 <= hsi_index < hsi_pixels:
+                            success += 1
+                            spatial_transform[hsi_index, rgb_index] = hsi_distribution[k, l]
+                        else:
+                            if debug:
+                                print(f"\n===GetPixels===",
+                                    f"\nrgb_limits: {rgb_limits}",
+                                    f"\nhsi_limits: {hsi_limits}",
+                                    f"\nrgb_coords: {rgb_coords}",
+                                    f"\nhsi_coords: {hsi_coords}",
+                                    f"\nrgb_index: {rgb_index}",
+                                    f"\nhsi_index: {hsi_index}",
+                                    f"\nSpatial transform shape: {spatial_transform.shape}")
+                            failed += 1
+        percentage = failed/(failed+success)
+        if percentage > 0.05:
+            print(f"Warning {percentage*100}% of spatial transform failed")"""
         return spatial_transform, hsi_limits
         
         
-    def get_pixels(self, rgb_mask, hsi_mask, rgb_origin, hsi_origin): #THIS IS TERRIBLE CODE
-        """Finds spatial transform between HSI and RGB section.
-
-        Args:
-            pixel_bounds (np.array): point coords that define HSI active area
-            rgb_bounds (np.array): point coords that define entire RGB image
-            transform_r2h (np.array): homogenous transform from RGB->HSI
-            transform_h2r (np.array): homogenous transform from HSI->RGB
-
-        Returns:
-            tuple (np.array, np.array, np.array, np.array): (spatial transform, rgb bounds [xmin, xmax, ymin, ymax], hsi overlap mask, rgb overlap mask)
-        """
+    """def get_pixels(self, rgb_mask, hsi_mask, rgb_origin, hsi_origin): #THIS IS TERRIBLE CODE
         
         rgb_pixels = np.sum(rgb_mask)
         hsi_pixels = np.sum(hsi_mask)
@@ -318,7 +358,7 @@ class spatial_transform:
         normalization_weights = np.sum(spatial_transform, axis=0)
         spatial_transform = spatial_transform/normalization_weights
         
-        return spatial_transform
+        return spatial_transform"""
 
     def get_distribution(self, coords):
         hsi_rem = np.remainder(coords, 1.0)
@@ -347,31 +387,34 @@ class spatial_transform:
                            [limits[1], limits[3], 1.0],
                            [limits[0], limits[3], 1.0],
                            ])
+        #print(f"rgb points: {RGB_points}")
+        #print(f"transform: {self.rh_transform}")
         HSI_points = (self.rh_transform@RGB_points.T).T
-        HSI_points = (HSI_points[:2] / HSI_points[2:3]).astype(np.int32)
-        hsi_limits = np.clip(np.array([
+        #print(f"HSI points homogeneous: {HSI_points}")
+        HSI_points = (HSI_points[:,:2] / HSI_points[:,2:3]).astype(np.int32)
+        #print(f"HSI points: {HSI_points}")
+        hsi_limits = np.clip(np.array([ #format [x_min, x_max, y_min, y_max]
                                     np.floor(np.min(HSI_points[:,0])).astype(np.int32) - 1,
                                     np.ceil(np.max(HSI_points[:,0])).astype(np.int32) + 1,
                                     np.floor(np.min(HSI_points[:,1])).astype(np.int32) - 1,
                                     np.ceil(np.max(HSI_points[:,1])).astype(np.int32) + 1,
                                     ]),
                                 a_min=np.array([0, 0, 0, 0]),
-                                a_max=np.array([self.hsi_mask.shape[0], self.hsi_mask.shape[0], self.hsi_mask.shape[1], self.hsi_mask.shape[1]])
+                                a_max=np.array([self.hsi_mask.shape[0], self.hsi_mask.shape[0],
+                                                self.hsi_mask.shape[1], self.hsi_mask.shape[1]])
                             )
+        #print(f"HSI limits: {hsi_limits}")
         return hsi_limits
         
     
 def remove_unused(transform, array):
-    num_zero_entries = np.sum(np.all(transform == 0, axis=0))
-    new_array = np.zeros(shape=(array.shape[0]-num_zero_entries, array.shape[1]))
-    new_transform = np.zeros(shape=(transform.shape[0]-num_zero_entries, transform.shape[1]))
-    index = 0
-    for i in range(transform.shape[0]):
-        if not np.all(transform[i,:] == 0):
-            new_array[index,:] = array[i,:]
-            new_transform[index,:] = transform[i,:]
-            index += 1
-    assert not np.any(np.sum(new_transform, axis=0) == 0) and not np.any(np.sum(new_array) == 0), "Zeros in input data"
+    mask = np.any(transform != 0, axis=1)  # Boolean mask for non-zero rows
+    #print(f"mask shape: {mask.shape}\narray shape: {array.shape}\ntransform shape: {transform.shape}")
+    new_transform = transform[mask]  # Efficient row filtering
+    new_array = array.T[mask].T
+    
+    assert not np.any(np.sum(new_transform, axis=1) == 0), "unmapped hsi pixels"
+    
     return new_transform, new_array
 
 def create_gaussian_array(size=100, mean=0, std=1):

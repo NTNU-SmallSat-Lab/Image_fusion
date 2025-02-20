@@ -27,6 +27,8 @@ def CPPA(HSI_data: np.array,
 
     h_flat, m_flat = HSI_data, MSI_data
     
+    #print(h_flat.shape, m_flat.shape)
+    
     h_ppa = simple_PPA(data=h_flat, delta=delta, n=endmembers)
     m_ppa = simple_PPA(data=m_flat, delta=delta, n=endmembers)
 
@@ -52,8 +54,8 @@ def RGB_NNLS(PPA_obj: simple_PPA, data):
     PPA_obj.abundances_update(data)
 
 def Fuse_RGB_to_HSI(PPA_obj: simple_PPA, transform):
-    print(PPA_obj.h.shape)
-    print(transform.shape)
+    #print(PPA_obj.h.shape)
+    #print(transform.shape)
     return PPA_obj.h@transform
 
 def main_loop(PPA_obj_h: simple_PPA, 
@@ -65,7 +67,7 @@ def main_loop(PPA_obj_h: simple_PPA,
               loops: int,
               tol: float):
     for i in range(loops):
-        print(f"Starting loop {i}")
+        #print(f"Starting loop {i}")
         PPA_HSI_step(PPA_obj_h, data_h)
         PPA_obj_m.w = PPA_to_RGB(PPA_obj_h, spectral_transform)
         RGB_NNLS(PPA_obj_m, data_m)

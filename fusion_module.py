@@ -21,7 +21,7 @@ class Fusion:
                         self.data_string = Path(f"C:/Users/phili/Desktop/Image_fusion/data/{self.name}.nc")
                 self.read_config()
                 self.flip = True
-                self.patch_size = 20
+                self.patch_size = 100
                 rgb_mask = np.loadtxt(self.rgb_mask)
                 self.spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],112)
                 self.loops = (self.inner_loops, self.outer_loops)
@@ -37,12 +37,12 @@ class Fusion:
         
         def load_images(self):
                 # Normalize HSI Image
-                normalized = cv2.normalize(ld.load_l1b_cube(self.data_string), None, 0, 255, cv2.NORM_MINMAX)
+                normalized = cv2.normalize(ld.load_l1b_cube(self.data_string)[150:450,:,:], None, 0, 255, cv2.NORM_MINMAX)
                 normalized = np.uint8(normalized)  # Convert to uint8 for saving
 
                 # Load RGB Image (Ensure RGB Conversion)
                 rgb_path = str(self.data_string).replace("-", "_").replace("16Z_l1b.nc", "14.png")
-                self.rgb_img = cv2.imread(rgb_path, cv2.IMREAD_COLOR)
+                self.rgb_img = cv2.imread(rgb_path, cv2.IMREAD_COLOR)[1000:3000,1000:2500]
                 if self.rgb_img is not None:  
                         self.rgb_img = cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2RGB)  # Convert BGR → RGB
                 
@@ -123,10 +123,10 @@ class Fusion:
                                                                                             tol= self.tol)
                 else:
                         raise ValueError(f"{self.type} is not a fusion method")
-                if np.abs(np.mean(np.sum(self.abundances, axis = 0))-1) > 1e-1:
+                """if np.abs(np.mean(np.sum(self.abundances, axis = 0))-1) > 1e-1:
                         self.delta = self.delta*0.5
                         print(f"Abundances outside of allowed values, reducing delta to {self.delta}")
-                        self.fuse()
+                        self.fuse()"""
                 return upscaled_patch
         
         def log_run(self):
@@ -187,24 +187,44 @@ class Fusion:
                                 rgb_limits = np.array([x, x+self.patch_size, y, y+self.patch_size])
                                 spatial_transform, hsi_limits =  self.spatial.get_pixels2(rgb_limits)
                                 if spatial_transform is None or hsi_limits is None:
-                                        print(f"Skipped patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size})")
+                                        print(f"Skipped patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size}) due to getpixel->None")
+                                        x += self.patch_size
+                                        if x > self.rgb_img.shape[1] - self.patch_size:
+                                                done_row = True
                                         continue
                                 hsi_patch = self.full_arr[hsi_limits[0]:hsi_limits[1], hsi_limits[2]: hsi_limits[3], :]
-                                rgb_data = self.rgb_img[rgb_limits[0]:rgb_limits[1], rgb_limits[2]:rgb_limits[2], :]
-                                pruned_transform, pruned_hsi_data = remove_unused(spatial_transform, hsi_patch)
-                                upscaled_data = self.fuse(pruned_hsi_data, 
-                                                        rgb_data, 
-                                                        pruned_transform)
+                                hsi_data = hsi_patch.reshape(-1,hsi_patch.shape[2]).T
+                                rgb_patch = self.rgb_img[rgb_limits[0]:rgb_limits[1], rgb_limits[2]:rgb_limits[3], :]
+                                rgb_data = rgb_patch.reshape(-1, 3).T
+                                pruned_transform, pruned_hsi_data = remove_unused(spatial_transform, hsi_data)
+                                if pruned_hsi_data.shape[1] < 5:
+                                        print(f"Skipped patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size}) due to 5>hsi_pixels")
+                                        x += self.patch_size
+                                        if x > self.rgb_img.shape[1] - self.patch_size:
+                                                done_row = True
+                                        continue
+                                try:
+                                        upscaled_data = self.fuse(pruned_hsi_data, 
+                                                                rgb_data, 
+                                                                pruned_transform.T)
+                                except:
+                                        print(f"Skipped patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size}) due to fusion failure")
+                                        x += self.patch_size
+                                        if x > self.rgb_img.shape[1] - self.patch_size:
+                                                done_row = True
+                                        continue
                                 #upscaled_patch = rebuild_data(upscaled_data,rgb_mask)
-                                upscaled_patch = upscaled_data.T.reshape(rgb_data.shape[0], rgb_data.shape[1], hsi_patch.shape[2])
+                                upscaled_patch = upscaled_data.T.reshape(rgb_patch.shape[0], rgb_patch.shape[1], hsi_patch.shape[2])
                                 self.upscaled_datacube[rgb_limits[0]:rgb_limits[1],
-                                                        rgb_limits[2]:rgb_limits[2],:] += upscaled_patch
+                                                        rgb_limits[2]:rgb_limits[3],:] += upscaled_patch
                                 self.upscaled_datacube.flush()
-                                print(f"Done patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size})")
+                                #print(f"Done patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size})")
                                 x += self.patch_size
                                 if x > self.rgb_img.shape[1] - self.patch_size:
                                         done_row = True
                         y += self.patch_size
+                        percent_done = y*100/(self.rgb_img.shape[0])
+                        print(f"{percent_done}% completed")
                         if y > self.rgb_img.shape[0] - self.patch_size:
                                 done = True
                 elapsed = time.time()-start
