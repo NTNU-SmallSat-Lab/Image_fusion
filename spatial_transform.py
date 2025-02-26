@@ -236,14 +236,6 @@ class spatial_transform:
         debug = True
         rgb_x, rgb_y = rgb_limits[1]-rgb_limits[0], rgb_limits[3]-rgb_limits[2]
         rgb_pixels = rgb_x*rgb_y
-        #hsi_limits = self.get_extent(rgb_limits)
-        #hsi_x, hsi_y = hsi_limits[1]-hsi_limits[0], hsi_limits[3]-hsi_limits[2]
-        #if hsi_x == 0 or hsi_y == 0:
-        #    return None, None
-        #hsi_pixels = hsi_x*hsi_y
-        #spatial_transform = np.zeros(shape=(hsi_pixels, rgb_pixels))
-        #failed = 0
-        #success = 0
         
         x_min, x_max, y_min, y_max = rgb_limits
 
@@ -263,10 +255,13 @@ class spatial_transform:
                                np.ceil(np.max(hsi_centers[:,0])+1),
                                np.floor(np.min(hsi_centers[:,1])-1),
                                np.ceil(np.max(hsi_centers[:,1])+1),
-                               ]).astype(np.uint32)
-        
-        if np.any(np.min(hsi_limits) < 0) or np.any(np.max(hsi_limits, axis=0) > np.array([self.hsi_mask.shape[0], self.hsi_mask.shape[1]])):
+                               ]).astype(np.int32)
+
+        if (hsi_limits[0] < 0 or hsi_limits[2] < 0 or
+            hsi_limits[1] > self.hsi_mask.shape[0] or
+            hsi_limits[3] > self.hsi_mask.shape[1]):
             return None, None
+        
         hsi_x, hsi_y = hsi_limits[1]-hsi_limits[0], hsi_limits[3]-hsi_limits[2]
         hsi_indices = hsi_centers.astype(np.int32)-np.array([hsi_limits[0], hsi_limits[2]],dtype=np.int32)
         
@@ -283,36 +278,6 @@ class spatial_transform:
                     rgb_index = (rgb_coords[0]-rgb_limits[0]) + (rgb_coords[1]-rgb_limits[2])*rgb_x
                     hsi_index = hsi_coords[0] + hsi_coords[1]*hsi_x
                     spatial_transform[hsi_index, rgb_index] = hsi_distribution[k,l]
-        
-        """for i in range(rgb_x): #Vectorize this function
-            for j in range(rgb_y):
-                rgb_coords = np.array([i+rgb_limits[0]+0.5, j+rgb_limits[1]+0.5, 1.0])
-                hsi_coords_homogenous = (self.rh_transform@rgb_coords.T).T
-                hsi_coords = hsi_coords_homogenous[:2] / hsi_coords_homogenous[2:3] - np.array([hsi_limits[0], hsi_limits[2]])
-                hsi_distribution = self.get_distribution(hsi_coords_homogenous[:2])
-                hsi_coords = np.round(hsi_coords, decimals=0).astype(np.int32)
-                rgb_index = i+j*rgb_x
-                for k in range(hsi_distribution.shape[0]):
-                    for l in range(hsi_distribution.shape[1]):
-                        hsi_coords += np.array([k-1,l-1])
-                        hsi_index = hsi_coords[0]+hsi_coords[1]*hsi_x
-                        if 0 <= hsi_index < hsi_pixels:
-                            success += 1
-                            spatial_transform[hsi_index, rgb_index] = hsi_distribution[k, l]
-                        else:
-                            if debug:
-                                print(f"\n===GetPixels===",
-                                    f"\nrgb_limits: {rgb_limits}",
-                                    f"\nhsi_limits: {hsi_limits}",
-                                    f"\nrgb_coords: {rgb_coords}",
-                                    f"\nhsi_coords: {hsi_coords}",
-                                    f"\nrgb_index: {rgb_index}",
-                                    f"\nhsi_index: {hsi_index}",
-                                    f"\nSpatial transform shape: {spatial_transform.shape}")
-                            failed += 1
-        percentage = failed/(failed+success)
-        if percentage > 0.05:
-            print(f"Warning {percentage*100}% of spatial transform failed")"""
         return spatial_transform, hsi_limits
         
         

@@ -8,7 +8,8 @@ def CPPA(HSI_data: np.array,
          delta=0.15,
          endmembers=3, 
          loops=(10,5),
-         tol=1e-2) -> list[np.array, np.array, np.array]:
+         tol=1e-2,
+         target=1.0) -> list[np.array, np.array, np.array]:
     """Performs coupled Nonnegative matrix factorisation to upscale HSI data using spatial data from MSI
 
     Args:
@@ -29,8 +30,8 @@ def CPPA(HSI_data: np.array,
     
     #print(h_flat.shape, m_flat.shape)
     
-    h_ppa = simple_PPA(data=h_flat, delta=delta, n=endmembers)
-    m_ppa = simple_PPA(data=m_flat, delta=delta, n=endmembers)
+    h_ppa = simple_PPA(data=h_flat, delta=delta, n=endmembers, target = target)
+    m_ppa = simple_PPA(data=m_flat, delta=delta, n=endmembers, target = target)
 
     w, h = main_loop(h_ppa, 
                      m_ppa, 

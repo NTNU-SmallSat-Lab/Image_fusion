@@ -1,13 +1,13 @@
 import numpy as np
 from pathlib import Path
-from Plotting import save_final_image, save_endmembers_many, Normalize, save_endmembers_few
+from Plotting import save_final_image, save_endmembers_many, save_endmembers_few
 import utilities as util
 import os
-from CNMF import CNMF, Get_VCA
+from CNMF2 import CNMF
 import loader as ld
 import time
 import CPPA as ppa
-from spatial_transform import spatial_transform, remove_unused, rebuild_data
+from spatial_transform import spatial_transform, remove_unused
 import json
 import cv2
 import matplotlib.pyplot as plt
@@ -31,19 +31,16 @@ class Fusion:
                 else:
                         self.arr = cv2.normalize(self.full_arr, None, 0, 1, cv2.NORM_MINMAX)
                 self.spatial = spatial_transform(self.hsi_grayscale, self.rgb_grayscale)
-                if self.type == "CNMF":
-                        self.w_init = Get_VCA(self.lowres_downsampled, self.endmember_n)
-                        self.h_init = np.ones(shape=(self.endmember_n, self.lowres_downsampled.shape[0]*self.lowres_downsampled.shape[1]))
         
         def load_images(self):
                 # Normalize HSI Image
-                normalized = cv2.normalize(ld.load_l1b_cube(self.data_string)[150:450,:,:], None, 0, 1, cv2.NORM_MINMAX)
+                normalized = cv2.normalize(ld.load_l1b_cube(self.data_string)[250:450,:,:], None, 0, 1, cv2.NORM_MINMAX)
 
                 # Load RGB Image (Ensure RGB Conversion)
                 rgb_path = str(self.data_string).replace("-", "_").replace("16Z_l1b.nc", "14.png")
-                self.rgb_img = cv2.imread(rgb_path, cv2.IMREAD_COLOR)[1000:3000,1000:2500]
+                self.rgb_img = cv2.imread(rgb_path, cv2.IMREAD_COLOR)
                 if self.rgb_img is not None:  
-                        self.rgb_img = cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2RGB)  # Convert BGR → RGB
+                        self.rgb_img = cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2RGB)[1000:2800, 1800:2600]  # Convert BGR → RGB
                 
                 # Apply Flip and Rotate (Correct Order)
                 if self.flip:
@@ -110,16 +107,15 @@ class Fusion:
                                                   loops= self.loops,
                                                   tol= self.tol)
                 elif self.type == "CNMF":
-                        upscaled_patch, patch_endmembers, patch_abundances = CNMF(HSI_data = HSI_patch, 
-                                                                                            MSI_data= RGB_patch, 
-                                                                                            spatial_transform= spatial_transform, 
-                                                                                            spectral_response= self.spectral_response_matrix,
-                                                                                            w_init=self.w_init, 
-                                                                                            h_init=self.h_init,
-                                                                                            delta= self.delta, 
-                                                                                            endmembers= self.endmember_n,
-                                                                                            loops= self.loops,
-                                                                                            tol= self.tol)
+                        CNMF_obj = CNMF(HSI_data = HSI_patch, 
+                                              MSI_data= RGB_patch, 
+                                              spatial_transform= spatial_transform, 
+                                              spectral_response= self.spectral_response_matrix,
+                                              delta= self.delta,
+                                              endmembers= self.endmember_n,
+                                              loops= self.loops,
+                                              tol= self.tol)
+                        upscaled_patch = CNMF_obj.final
                 else:
                         raise ValueError(f"{self.type} is not a fusion method")
                 """if np.abs(np.mean(np.sum(self.abundances, axis = 0))-1) > 1e-1:
@@ -173,7 +169,7 @@ class Fusion:
                                 
         def fuse_image(self):
                 start = time.time()
-                final_cube_shape = (self.rgb_img.shape[1], self.rgb_img.shape[0], 112)
+                final_cube_shape = (self.rgb_img.shape[0], self.rgb_img.shape[1], 112)
                 self.upscaled_datacube = np.memmap("Upscaled_cube.dat", dtype=np.float32, mode='w+', shape=final_cube_shape)
                 #~1.1E9 pixel values on upscaled cube
                 done = False
@@ -187,7 +183,7 @@ class Fusion:
                                 if spatial_transform is None or hsi_limits is None:
                                         print(f"Skipped patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size}) due to getpixel->None")
                                         x += self.patch_size
-                                        if x > self.rgb_img.shape[1] - self.patch_size:
+                                        if x > self.rgb_img.shape[0] - self.patch_size:
                                                 done_row = True
                                         continue
                                 hsi_patch = self.full_arr[hsi_limits[0]:hsi_limits[1], hsi_limits[2]: hsi_limits[3], :]
@@ -198,20 +194,22 @@ class Fusion:
                                 if pruned_hsi_data.shape[1] < 5:
                                         print(f"Skipped patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size}) due to 5>hsi_pixels")
                                         x += self.patch_size
-                                        if x > self.rgb_img.shape[1] - self.patch_size:
+                                        if x > self.rgb_img.shape[0] - self.patch_size:
                                                 done_row = True
                                         continue
-                                try:
+                                upscaled_data = self.fuse(pruned_hsi_data, 
+                                                                rgb_data, 
+                                                                pruned_transform.T)
+                                """try:
                                         upscaled_data = self.fuse(pruned_hsi_data, 
                                                                 rgb_data, 
                                                                 pruned_transform.T)
-                                except:
-                                        print(f"Skipped patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size}) due to fusion failure")
+                                except Exception as e:
+                                        print(f"Skipped patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size}) due to fusion failure {type(e).__name__}")
                                         x += self.patch_size
-                                        if x > self.rgb_img.shape[1] - self.patch_size:
+                                        if x > self.rgb_img.shape[0] - self.patch_size:
                                                 done_row = True
-                                        continue
-                                #upscaled_patch = rebuild_data(upscaled_data,rgb_mask)
+                                        continue"""
                                 upscaled_patch = upscaled_data.T.reshape(rgb_patch.shape[0], rgb_patch.shape[1], hsi_patch.shape[2])
                                 upscaled_patch = cv2.normalize(upscaled_patch, None, 0, 1.0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
                                 self.upscaled_datacube[rgb_limits[0]:rgb_limits[1],
@@ -219,12 +217,12 @@ class Fusion:
                                 self.upscaled_datacube.flush()
                                 #print(f"Done patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size})")
                                 x += self.patch_size
-                                if x > self.rgb_img.shape[1] - self.patch_size:
+                                if x > self.rgb_img.shape[0] - self.patch_size:
                                         done_row = True
                         y += self.patch_size
-                        percent_done = y*100/(self.rgb_img.shape[0])
+                        percent_done = y*100/(self.rgb_img.shape[1])
                         print(f"{percent_done}% completed")
-                        if y > self.rgb_img.shape[0] - self.patch_size:
+                        if y > self.rgb_img.shape[1] - self.patch_size:
                                 done = True
                 elapsed = time.time()-start
                 print(f"Total run over in {elapsed} seconds, final datacube size is {self.upscaled_datacube.nbytes}\n final cube shape: {final_cube_shape}")

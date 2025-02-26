@@ -7,12 +7,13 @@ import os
 from scipy.spatial.distance import euclidean
 
 class simple_PPA:
-    def __init__(self, data, n, delta=0.15) -> None:
+    def __init__(self, data, n, delta=0.15, target = 1.0) -> None:
         self.w = np.ones(shape=(data.shape[0], n)) / np.sqrt(data.shape[0])
         self.h = np.ones(shape=(n, data.shape[1])) / n
         self.endmembers = n
         self.weights = np.ones(data.shape[1])
         self.delta = delta
+        self.target = target
 
     def single_member_update(self, data, i):
         err = (data - self.w@self.h).T
@@ -65,9 +66,9 @@ class simple_PPA:
             self.single_member_update(data, i)
     
     def abundances_update(self, data):
-        w_e = np.ones(shape=(self.w.shape[0]+1,self.w.shape[1]))
+        w_e = np.ones(shape=(self.w.shape[0]+1,self.w.shape[1]))*self.target
         w_e[:-1,:] = self.delta*self.w
-        data_e = np.ones(shape=(data.shape[0]+1,data.shape[1]))
+        data_e = np.ones(shape=(data.shape[0]+1,data.shape[1]))*self.target
         data_e[:-1,:] = self.delta*data
 
         S = np.array([opt.nnls(w_e, i, maxiter=5000)[0] for i in data_e.T], 
