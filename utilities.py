@@ -31,14 +31,14 @@ def Cost(Data1, Data2, band1=0, band2=0):
         return cost
 
 def Wavelength_to_band(wavelength):
-    wavelengths = np.asarray(pd.read_csv("spectral_bands_Hypso-1_v1.csv"))[:,0]
+    wavelengths = np.load('spectral_bands_HYPSO-2.npz')['arr_0']
     for i in range(wavelengths.shape[0]):
          if (wavelengths[i] < wavelength) and (wavelengths[i+1]>wavelength):
               return i
     return -1
 
 def band_to_wavelength(band: int):
-    wavelengths = np.asarray(pd.read_csv("spectral_bands_Hypso-1_v1.csv"))[:,0]
+    wavelengths = np.load('spectral_bands_HYPSO-2.npz')['arr_0']
     return (wavelengths[band],wavelengths[band+1])
     
 
@@ -109,7 +109,7 @@ def Gen_spectral(rgb, bands, spectral_spread) -> np.array:
 def map_mask_to_bands(mask: np.array, bands: int):
     output = np.zeros(shape=(mask.shape[1],bands), dtype=np.float32)
     for i in range(mask.shape[0]):
-        band = Wavelength_to_band(i)+4
+        band = Wavelength_to_band(i)+6
         if band != -1:
             output[:,band] = output[:,band] + mask[i,:].T
     return output

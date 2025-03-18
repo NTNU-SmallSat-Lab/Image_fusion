@@ -10,7 +10,7 @@ delta = 0.4
 endmember_n = 3
 
 #Types PPA (pure pixel analysis) or CNMF (coupled non-negative matrix factorization)
-type = CNMF
+type = PPA
 #Remove 90% of darkest pixel in each band
 remove_darkest = True
 

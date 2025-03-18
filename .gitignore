@@ -15,3 +15,5 @@ RGB_mask_test.txt
 Test.py
 todo.md
 *.dat
+Test*
+*.npz

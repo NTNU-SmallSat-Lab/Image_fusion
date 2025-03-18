@@ -110,5 +110,5 @@ def CheckMat(data: np.array, name: str, zero = False):
         assert not np.any(data == 0), f"Matrix {name} has Zero values"
 
 def Get_VCA(h_flat, endmembers: int):
-    Ae, _, _ = vca(h_flat, endmembers, verbose=True)
+    Ae, _, _ = vca(h_flat, endmembers, verbose=False)
     return Ae

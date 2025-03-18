@@ -17,7 +17,7 @@ class simple_PPA:
 
     def single_member_update(self, data, i):
         err = (data - self.w@self.h).T
-        rem = (data - self.w[:,i][:,np.newaxis]).T #remainder without EM contribution'
+        rem = (data - self.w[:,i][:,np.newaxis]).T
 
         elo_sum = np.sum(np.multiply(self.weights*self.h[i], err.T), axis=1) #calculates the total error for each band
         elo = elo_sum@rem.T
@@ -26,15 +26,15 @@ class simple_PPA:
 
         norm = np.array([k@k for k in rem])
         a = np.ones_like(norm, dtype=np.float64)
-        #print(f"denom: ({denom.shape},{denom.sum()})\nnorm: ({norm.shape},{norm.sum()})\nelo: ({elo.shape},{elo.sum()})")
+
         total_change = - (denom*norm)/2*a**2 + elo.T*a.T 
         energies = -total_change
 
         sor_eng = np.argsort(energies)
-        #print(energies.min())
+
         j = 1
         # Define a threshold for spectral similarity
-        threshold = 0.1
+        threshold = 0.01
 
         remE = [k for k in range(self.endmembers)]
         remE.remove(i)
@@ -99,14 +99,13 @@ def get_PPA(data, EM, delta=0.15):
     return sppa.w, sppa.h
 
 if __name__ == "__main__":
-    data_string, name = util.Get_path()
+    cube = np.memmap("Upscaled_cube.dat", dtype=np.float32, mode='r', shape=(800, 1748, 112))
     EM = 3 #Number of endmember spectra
 
-    x_start, x_end, y_start, y_end = 0, 300, 0, 100 #Coordinates that image is cropped to
+    x_start, x_end, y_start, y_end = 0, 300, 0, 300 #Coordinates that image is cropped to
     pix_coords = [x_start,x_end,y_start,y_end]
     size = (x_end-x_start, y_end-y_start)
-
-    arr = ld.load_l1b_cube(data_string, coords=pix_coords)
+    arr = cube[x_start:x_end,y_start:y_end,:]
     arr = util.remove_darkest(arr) #Removes 90% of the darkest pixel in each band from entire image (in that band)
     arr = plot.Normalize(arr)
     flat = arr.reshape(arr.shape[0]*arr.shape[1],arr.shape[2]).T
@@ -115,14 +114,10 @@ if __name__ == "__main__":
 
     sppa.train(flat)
 
-    save_path = f"outputs\\PPA{name}_{x_start}-{x_end}x_{y_start}-{y_end}y\\"
+    save_path = f"{x_start}-{x_end}x_{y_start}-{y_end}y"
     if not os.path.exists(save_path):
             os.mkdir(save_path)
 
-    rgb_mask = np.loadtxt("RGB_mask.txt")
-    spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],112)
-    upscaled = np.matmul(sppa.w,sppa.h).T.reshape(arr.shape[0], arr.shape[1], arr.shape[2])
-
     #Note that plotting functions are from image fusion module, need to be rewritten for actual PPA if that is intended use
     plot.save_endmembers_few(sppa.w, sppa.h, size, save_path)
-    plot.save_final_image(arr, np.ones_like(arr), upscaled, spectral_response_matrix, save_path)
+    #plot.save_final_image(arr, np.ones_like(arr), upscaled, spectral_response_matrix, save_path)

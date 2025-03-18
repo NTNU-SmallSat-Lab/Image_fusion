@@ -182,7 +182,6 @@ class spatial_transform:
         # Get min/max indices
         x_min, x_max = np.where(rows)[0][[0, -1]]
         y_min, y_max = np.where(cols)[0][[0, -1]]
-        print(x_min, x_max, y_min, y_max)
 
         self.hsi_image = self.hsi_image[x_min:x_max,y_min:y_max].copy()
         self.hsi_limits = np.array([x_min, x_max, y_min, y_max]) #needed by fusion module

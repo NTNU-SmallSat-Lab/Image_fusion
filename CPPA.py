@@ -42,7 +42,7 @@ def CPPA(HSI_data: np.array,
                      loops[1], 
                      tol)
     out = np.matmul(w,h)
-    return out
+    return out, w, h
 
 
 def PPA_HSI_step(PPA_obj: simple_PPA, data):

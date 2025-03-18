@@ -6,11 +6,10 @@ import os
 from CNMF2 import CNMF
 import loader as ld
 import time
-import CPPA as ppa
-from spatial_transform import spatial_transform, remove_unused
+from CPPA import CPPA
+from spatial_transform import spatial_transform
 import json
 import cv2
-import matplotlib.pyplot as plt
 
 class Fusion:
         def __init__(self, name = ""): #THIS IS still A BAD INIT FUNCTION
@@ -21,26 +20,36 @@ class Fusion:
                         self.data_string = Path(f"C:/Users/phili/Desktop/Image_fusion/data/{self.name}.nc")
                 self.read_config()
                 self.flip = True
-                self.patch_size = 100
+                self.patch_size = 50
                 rgb_mask = np.loadtxt(self.rgb_mask)
-                self.spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],112)
+                self.spectral_response_matrix = util.map_mask_to_bands(rgb_mask[0:700,:],108)*3.8
                 self.loops = (self.inner_loops, self.outer_loops)
                 self.load_images()
+                self.sampling_distance = 100
                 if self.remove_darkest:
-                        self.arr = cv2.normalize(util.remove_darkest(self.full_arr), None, 0, 1, cv2.NORM_MINMAX)
+                        self.full_arr = cv2.normalize(util.remove_darkest(self.full_arr), None, 0, 1, cv2.NORM_MINMAX)
                 else:
-                        self.arr = cv2.normalize(self.full_arr, None, 0, 1, cv2.NORM_MINMAX)
+                        self.full_arr = cv2.normalize(self.full_arr, None, 0, 1, cv2.NORM_MINMAX)
                 self.spatial = spatial_transform(self.hsi_grayscale, self.rgb_grayscale)
+                self.full_arr = self.full_arr[self.spatial.hsi_limits[0]:self.spatial.hsi_limits[1], self.spatial.hsi_limits[2]:self.spatial.hsi_limits[3]]
+                self.input_datacube = np.memmap("Input_datacube.dat", dtype=np.float32, mode='w+', shape=(self.rgb_grayscale.shape[0], self.rgb_grayscale.shape[1], 108))
+                for i in range(108):
+                        self.input_datacube[:,:,i] = cv2.warpPerspective(self.full_arr[:,:,i], 
+                                                                         self.spatial.hr_transform, 
+                                                                         (self.rgb_grayscale.shape[1], self.rgb_grayscale.shape[0]))
+                        self.input_datacube.flush()
+                self.input_datacube = np.memmap("Input_datacube.dat", dtype=np.float32, mode='r', shape=(self.rgb_grayscale.shape[0], self.rgb_grayscale.shape[1], 108))
+                self.full_arr = None #My poor RAM
         
         def load_images(self):
                 # Normalize HSI Image
-                normalized = cv2.normalize(ld.load_l1b_cube(self.data_string)[250:450,:,:], None, 0, 1, cv2.NORM_MINMAX)
+                normalized = cv2.normalize(ld.load_l1b_cube(self.data_string, bands=[6, 114])[250:450,:,:], None, 0, 1, cv2.NORM_MINMAX)
 
                 # Load RGB Image (Ensure RGB Conversion)
                 rgb_path = str(self.data_string).replace("-", "_").replace("16Z_l1b.nc", "14.png")
                 self.rgb_img = cv2.imread(rgb_path, cv2.IMREAD_COLOR)
                 if self.rgb_img is not None:  
-                        self.rgb_img = cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2RGB)[1000:2800, 1800:2600]  # Convert BGR → RGB
+                        self.rgb_img = cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2RGB)[1000:2800:2, 1800:2600:2]  # Convert BGR → RGB
                 
                 # Apply Flip and Rotate (Correct Order)
                 if self.flip:
@@ -66,7 +75,7 @@ class Fusion:
                         new_width = width
                         new_height = int(height * scale_factor)
 
-                self.full_arr = cv2.resize(normalized, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+                self.full_arr = cv2.resize(normalized, (new_width, new_height), interpolation=cv2.INTER_NEAREST_EXACT)
 
                 # Compute HSI-RGB Mapping and Normalize
                 hsi_rgb_float = cv2.normalize(self.full_arr @ self.spectral_response_matrix.T, None, 0, 255, cv2.NORM_MINMAX)
@@ -98,7 +107,7 @@ class Fusion:
         
         def fuse(self, HSI_patch, RGB_patch, spatial_transform):
                 if self.type == "PPA":
-                        upscaled_patch = ppa.CPPA(HSI_data = HSI_patch, 
+                        upscaled_patch, w, h = CPPA(HSI_data = HSI_patch, 
                                                   MSI_data= RGB_patch, 
                                                   spatial_transform= spatial_transform, 
                                                   spectral_response= self.spectral_response_matrix, 
@@ -106,6 +115,7 @@ class Fusion:
                                                   endmembers= self.endmember_n,
                                                   loops= self.loops,
                                                   tol= self.tol)
+                        save_endmembers_few(w, h, (self.patch_size, self.patch_size), f"patches/patch_{self.patch}")
                 elif self.type == "CNMF":
                         CNMF_obj = CNMF(HSI_data = HSI_patch, 
                                               MSI_data= RGB_patch, 
@@ -169,59 +179,35 @@ class Fusion:
                                 
         def fuse_image(self):
                 start = time.time()
-                final_cube_shape = (self.rgb_img.shape[0], self.rgb_img.shape[1], 112)
+                final_cube_shape = (self.rgb_img.shape[0], self.rgb_img.shape[1], 108)
                 self.upscaled_datacube = np.memmap("Upscaled_cube.dat", dtype=np.float32, mode='w+', shape=final_cube_shape)
-                #~1.1E9 pixel values on upscaled cube
+                spatial_transform = self.gen_spatial(kernel_size=7)
                 done = False
                 y = 0
                 while not done:
                         done_row = False
                         x = 0
                         while not done_row:
+                                self.patch = f"{x}-{x+self.patch_size}_{y}-{y+self.patch_size}"
                                 rgb_limits = np.array([x, x+self.patch_size, y, y+self.patch_size])
-                                spatial_transform, hsi_limits =  self.spatial.get_pixels2(rgb_limits)
-                                if spatial_transform is None or hsi_limits is None:
-                                        print(f"Skipped patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size}) due to getpixel->None")
-                                        x += self.patch_size
-                                        if x > self.rgb_img.shape[0] - self.patch_size:
-                                                done_row = True
-                                        continue
-                                hsi_patch = self.full_arr[hsi_limits[0]:hsi_limits[1], hsi_limits[2]: hsi_limits[3], :]
+                                hsi_patch = self.input_datacube[rgb_limits[0]:rgb_limits[1], rgb_limits[2]: rgb_limits[3], :]
                                 hsi_data = hsi_patch.reshape(-1,hsi_patch.shape[2]).T
                                 rgb_patch = self.rgb_img[rgb_limits[0]:rgb_limits[1], rgb_limits[2]:rgb_limits[3], :]
                                 rgb_data = rgb_patch.reshape(-1, 3).T
-                                pruned_transform, pruned_hsi_data = remove_unused(spatial_transform, hsi_data)
-                                if pruned_hsi_data.shape[1] < 5:
-                                        print(f"Skipped patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size}) due to 5>hsi_pixels")
-                                        x += self.patch_size
-                                        if x > self.rgb_img.shape[0] - self.patch_size:
-                                                done_row = True
-                                        continue
-                                upscaled_data = self.fuse(pruned_hsi_data, 
-                                                                rgb_data, 
-                                                                pruned_transform.T)
-                                """try:
-                                        upscaled_data = self.fuse(pruned_hsi_data, 
-                                                                rgb_data, 
-                                                                pruned_transform.T)
-                                except Exception as e:
-                                        print(f"Skipped patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size}) due to fusion failure {type(e).__name__}")
-                                        x += self.patch_size
-                                        if x > self.rgb_img.shape[0] - self.patch_size:
-                                                done_row = True
-                                        continue"""
+                                upscaled_data = self.fuse(hsi_data, 
+                                                        rgb_data, 
+                                                        spatial_transform)
                                 upscaled_patch = upscaled_data.T.reshape(rgb_patch.shape[0], rgb_patch.shape[1], hsi_patch.shape[2])
                                 upscaled_patch = cv2.normalize(upscaled_patch, None, 0, 1.0, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_32F)
                                 self.upscaled_datacube[rgb_limits[0]:rgb_limits[1],
                                                         rgb_limits[2]:rgb_limits[3],:] = upscaled_patch
                                 self.upscaled_datacube.flush()
-                                #print(f"Done patch ({x}:{x+self.patch_size},{y}:{y+self.patch_size})")
                                 x += self.patch_size
                                 if x > self.rgb_img.shape[0] - self.patch_size:
                                         done_row = True
                         y += self.patch_size
                         percent_done = y*100/(self.rgb_img.shape[1])
-                        print(f"{percent_done}% completed")
+                        print(f"{percent_done:.2f}% completed")
                         if y > self.rgb_img.shape[1] - self.patch_size:
                                 done = True
                 elapsed = time.time()-start
@@ -231,6 +217,52 @@ class Fusion:
                 cv2.imwrite("output/recent_band_70.png", (self.upscaled_datacube[:,:,67]*255).astype(np.uint8))
                 cv2.imwrite("output/recent_rgb_base.png", cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2BGR))
                 cv2.imwrite("output/recent_hsi_gray.png", self.hsi_grayscale)
+        
+
+
+        def gen_spatial(self, kernel_size=3) -> np.ndarray: #Chat GPT
+                gaussian_1d = cv2.getGaussianKernel(kernel_size, sigma=4)
+                gaussian_2d = np.outer(gaussian_1d, gaussian_1d)
+
+                patch_size = self.patch_size
+                patch_spatial = np.zeros((patch_size * patch_size, patch_size * patch_size))
+
+                # Compute the kernel offsets
+                x_kern, y_kern = np.meshgrid(np.arange(kernel_size) - kernel_size // 2,
+                                                np.arange(kernel_size) - kernel_size // 2)
+
+                x_kern = x_kern.ravel()
+                y_kern = y_kern.ravel()
+                
+                # Compute all (x_0, y_0) positions
+                x_0, y_0 = np.meshgrid(np.arange(patch_size), np.arange(patch_size))
+                x_0 = x_0.ravel()
+                y_0 = y_0.ravel()
+
+                # Compute the modified coordinates
+                x_hsi = (x_0[:, None] + x_kern).flatten()
+                y_hsi = (y_0[:, None] + y_kern).flatten()
+                
+                # Mask for valid coordinates
+                valid_mask = (0 <= x_hsi) & (x_hsi < patch_size) & (0 <= y_hsi) & (y_hsi < patch_size)
+                
+                # Compute flat indices
+                k_indices = np.repeat(np.arange(patch_size * patch_size), kernel_size * kernel_size)[valid_mask]
+                hsi_indices = (x_hsi + y_hsi * patch_size)[valid_mask]
+
+                # Assign Gaussian values efficiently
+                patch_spatial[k_indices, hsi_indices] = np.tile(gaussian_2d.ravel(), patch_size * patch_size)[valid_mask]
+
+                return patch_spatial
+        
+        def generate_endmember_candidates(self):
+                shape = self.input_datacube.shape
+                endmembers = []
+                for i in range(50, shape[0]//self.sampling_distance, self.sampling_distance):
+                        for j in range(50, shape[1]//self.sampling_distance, self.sampling_distance):
+                                endmembers.append(self.input_datacube[i,j,:])
+                self.endmember_candidates = np.stack(endmembers)
+
                                 
                                 
 def run(name):
@@ -244,8 +276,10 @@ def run(name):
     
     # Append to the results file
     with open("results", "a") as results_file:
-        results_file.write(result_line)                          
+        results_file.write(result_line)
+
 
 if __name__ == "__main__":
         HSI_fusion = Fusion()
         HSI_fusion.fuse_image()
+        
