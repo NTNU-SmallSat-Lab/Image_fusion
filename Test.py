@@ -4,19 +4,19 @@ from utilities import Get_path
 from loader import load_l1b_cube
 
 # Define the shape of the data cube
-shape = (400, 874, 108)#(800, 1748, 112)
+shape = (800, 1748, 108)
 Upscaled_path = "Upscaled_cube.dat"
 input_path = "Input_datacube.dat"
 dtype = np.float32
 
-start_x, start_y = 200, 500
-patch_size = 40
+start_x, start_y = 600, 1300
+patch_size = 100
 
 upscaled_cube = np.memmap(Upscaled_path, dtype, 'r', shape=shape)
 original_cube = np.memmap(input_path, dtype, 'r', shape=shape)
 
 # Define points to extract spectra from
-points = [(30, 20), (30, 40), (30, 60), (30, 80)]
+points = [(80, 50), (80, 55), (80, 60), (80, 65)]
 
 # Extract spectra for each point
 spectra_upscaled = [upscaled_cube[x+start_x, y+start_y, :] for x, y in points]
@@ -41,6 +41,7 @@ axes[0, 0].legend()
 # Show the band image
 im = axes[1, 0].imshow(upscaled_image, cmap="gray")
 axes[1, 0].set_title(f"Band {band_index} Upscaled")
+axes[1, 0].axis("off")
 
 # Overlay points in corresponding colors
 colors = [line.get_color() for line in axes[0, 0].lines]
@@ -59,6 +60,7 @@ axes[0, 1].legend()
 # Show the band image
 im = axes[1, 1].imshow(original_image, cmap="gray")
 axes[1, 1].set_title(f"Band {band_index} original")
+axes[1, 1].axis("off")
 
 # Overlay points in corresponding colors
 colors = [line.get_color() for line in axes[0, 0].lines]

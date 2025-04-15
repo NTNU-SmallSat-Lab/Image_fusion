@@ -5,6 +5,7 @@ def CPPA(HSI_data: np.array,
          MSI_data: np.array, 
          spatial_transform: np.array, 
          spectral_response: np.array,
+         endmember_list,
          delta=0.15,
          endmembers=3, 
          loops=(10,5),
@@ -30,8 +31,8 @@ def CPPA(HSI_data: np.array,
     
     #print(h_flat.shape, m_flat.shape)
     
-    h_ppa = simple_PPA(data=h_flat, delta=delta, n=endmembers, target = target)
-    m_ppa = simple_PPA(data=m_flat, delta=delta, n=endmembers, target = target)
+    h_ppa = simple_PPA(data=h_flat, delta=delta, n=endmembers, target = target, endmembers=endmember_list)
+    m_ppa = simple_PPA(data=m_flat, delta=delta, n=endmembers, target = target, endmembers=endmember_list)
 
     w, h = main_loop(h_ppa, 
                      m_ppa, 

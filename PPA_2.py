@@ -5,6 +5,7 @@ import utilities as util
 import Plotting as plot
 import os
 from scipy.spatial.distance import euclidean
+    
 
 class simple_PPA:
     def __init__(self, data, n, endmembers, delta=0.15, target = 1.0) -> None:
@@ -17,6 +18,7 @@ class simple_PPA:
         self.endmember_list = endmembers
 
     def single_member_update(self, data, i):
+        print(f"datashape: {data.shape}\nEndmember_list shape: {self.endmember_list.shape}")
         err = (data - self.w@self.h).T #Calc err
         rem = (self.endmember_list - self.w[:,i][:,np.newaxis]).T #Bring in candidate endmembers
 
@@ -102,6 +104,7 @@ def get_PPA(data, EM, delta=0.15):
     return sppa.w, sppa.h
 
 if __name__ == "__main__":
+    endmember_list = np.random.rand(108,10)
     cube = np.memmap("Input_datacube.dat", dtype=np.float32, mode='r', shape=(400, 874, 108))
     EM = 3 #Number of endmember spectra
 
@@ -113,7 +116,7 @@ if __name__ == "__main__":
     #arr = plot.Normalize(arr)
     flat = arr.reshape(arr.shape[0]*arr.shape[1],arr.shape[2]).T
 
-    sppa = simple_PPA(flat, EM, delta=0.05)
+    sppa = simple_PPA(flat, EM, endmember_list, delta=0.05)
 
     sppa.train(flat)
 
