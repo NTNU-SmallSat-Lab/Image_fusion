@@ -295,7 +295,11 @@ def calculate_psnr(original, reconstructed, max_pixel_value=1.0, axis=None):
     return psnr
 
 def remove_darkest(data):
-    data_proc = np.copy(data)
+    proc = data.copy()
     for i in range(data.shape[2]):
-        data_proc[:,:,i] -= int(0.9*np.min(data[:,:,i]))
-    return data_proc
+        min = np.min(data[:,:,i])
+        print(f"min for band {i} : {min}")
+        proc[:,:,i] -= 0.95*min
+        
+    #data -= 0.9*data[np.unravel_index(np.argmin(np.sum(data, axis=2)), data.shape[:2])]
+    return proc

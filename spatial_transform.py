@@ -78,7 +78,7 @@ class spatial_transform:
             if m.distance < 0.75 * n.distance:
                 good_matches.append(m)
 
-        img_matches = cv2.drawMatches(hsi_image, kp_hsi, rgb_image, kp_rgb, good_matches[:50], None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        img_matches = cv2.drawMatches(hsi_image, kp_hsi, rgb_image, kp_rgb, good_matches[:20], None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
         if self.write:
             plt.figure(figsize=(20, 10))
             plt.imshow(img_matches)
@@ -184,7 +184,7 @@ class spatial_transform:
         y_min, y_max = np.where(cols)[0][[0, -1]]
 
         self.hsi_image = self.hsi_image[x_min:x_max,y_min:y_max].copy()
-        self.hsi_limits = np.array([x_min, x_max, y_min, y_max]) #needed by fusion module
+        self.hsi_limits = np.array([x_min, x_max, y_min, y_max]) 
         
     def get_mask_subset(self, rgb_limits) -> tuple:
         """_summary_

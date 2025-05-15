@@ -16,7 +16,7 @@ upscaled_cube = np.memmap(Upscaled_path, dtype, 'r', shape=shape)
 original_cube = np.memmap(input_path, dtype, 'r', shape=shape)
 
 # Define points to extract spectra from
-points = [(80, 50), (80, 55), (80, 60), (80, 65)]
+points = [(20, 20), (20, 40), (20, 60), (20, 80)]
 
 # Extract spectra for each point
 spectra_upscaled = [upscaled_cube[x+start_x, y+start_y, :] for x, y in points]

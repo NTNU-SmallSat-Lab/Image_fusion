@@ -1,6 +1,6 @@
 import numpy as np
 from pathlib import Path
-from Plotting import save_final_image, save_endmembers_many, save_endmembers_few
+from Plotting import save_final_image, save_endmembers_many, save_endmembers_few, plot_final
 import utilities as util
 import os
 from CNMF2 import CNMF
@@ -10,6 +10,8 @@ from CPPA import CPPA
 from spatial_transform import spatial_transform
 import json
 import cv2
+import matplotlib.pyplot as plt
+from kernel import matrix_kernel_estimation_improved
 
 class Fusion:
         def __init__(self, name = ""): #THIS IS still A BAD INIT FUNCTION
@@ -26,18 +28,26 @@ class Fusion:
                 self.loops = (self.inner_loops, self.outer_loops)
                 self.load_images()
                 self.force_overwrite = False #avoid regenerating transformed datacube
+                repr = cv2.normalize(self.full_arr @ self.spectral_response_matrix.T, None, 0, 255, cv2.NORM_MINMAX)
+                cv2.imwrite("uncorrected.png", repr)
+                repr = cv2.normalize(util.remove_darkest(self.full_arr) @ self.spectral_response_matrix.T, None, 0, 255, cv2.NORM_MINMAX)
+                cv2.imwrite("corrected.png", repr)
+                print("done")
+                os._exit(0)
                 if self.remove_darkest:
                         self.full_arr = cv2.normalize(util.remove_darkest(self.full_arr), None, 0, 1, cv2.NORM_MINMAX)
                 else:
                         self.full_arr = cv2.normalize(self.full_arr, None, 0, 1, cv2.NORM_MINMAX)
                 self.spatial = spatial_transform(self.hsi_grayscale, self.rgb_grayscale)
+                self.hsi_grayscale = self.spatial.hsi_image
+                bands = 0
                 self.full_arr = self.full_arr[self.spatial.hsi_limits[0]:self.spatial.hsi_limits[1], self.spatial.hsi_limits[2]:self.spatial.hsi_limits[3]]
                 if not os.path.exists("Input_datacube.dat") or self.force_overwrite:
                         self.input_datacube = np.memmap("Input_datacube.dat", dtype=np.float32, mode='w+', shape=(self.rgb_grayscale.shape[0], self.rgb_grayscale.shape[1], 108))
-                        for i in range(108):
-                                self.input_datacube[:,:,i] = cv2.warpPerspective(self.full_arr[:,:,i], 
-                                                                                self.spatial.hr_transform, 
-                                                                                (self.rgb_grayscale.shape[1], self.rgb_grayscale.shape[0]))
+                        for i in range(bands):
+                                self.input_datacube[:,:,i] = cv2.warpPerspective(self.full_arr[:,:,i], #original HSI
+                                                                                self.spatial.hr_transform, #transform from HSI to RGB coordinates
+                                                                                (self.rgb_grayscale.shape[1], self.rgb_grayscale.shape[0])) #final resolution
                                 self.input_datacube.flush()
                 self.input_datacube = np.memmap("Input_datacube.dat", dtype=np.float32, mode='r', shape=(self.rgb_grayscale.shape[0], self.rgb_grayscale.shape[1], 108))
                 self.full_arr = None #My poor RAM
@@ -45,6 +55,7 @@ class Fusion:
         def load_images(self):
                 # Normalize HSI Image
                 normalized = cv2.normalize(ld.load_l1b_cube(self.data_string, bands=[6, 114])[250:450,:,:], None, 0, 1, cv2.NORM_MINMAX)
+                cv2.imwrite("Raw_cube.png", cv2.normalize(normalized[:,:,::-1] @ self.spectral_response_matrix.T, None, 0, 255, cv2.NORM_MINMAX))
                 
                 self.endmember_list = np.reshape(normalized[::10,::10,:],shape=(-1,108)).T
 
@@ -52,7 +63,7 @@ class Fusion:
                 rgb_path = str(self.data_string).replace("-", "_").replace("16Z_l1b.nc", "14.png")
                 self.rgb_img = cv2.imread(rgb_path, cv2.IMREAD_COLOR)
                 if self.rgb_img is not None:  
-                        self.rgb_img = cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2RGB)[1000:2800, 1800:2600]  # Convert BGR → RGB
+                        self.rgb_img = cv2.cvtColor(self.rgb_img, cv2.COLOR_BGR2RGB)[1000:2800, 1800:2600,:]  # Convert BGR → RGB
                 
                 # Apply Flip and Rotate (Correct Order)
                 if self.flip:
@@ -81,7 +92,8 @@ class Fusion:
                 self.full_arr = cv2.resize(normalized, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
 
                 # Compute HSI-RGB Mapping and Normalize
-                hsi_rgb_float = cv2.normalize(self.full_arr @ self.spectral_response_matrix.T, None, 0, 255, cv2.NORM_MINMAX)
+                hsi_rgb_float = cv2.normalize(self.full_arr[:,:,::-1] @ self.spectral_response_matrix.T, None, 0, 255, cv2.NORM_MINMAX)
+                cv2.imwrite("Preprocessed_cube.png", hsi_rgb_float)
                 hsi_rgb = np.clip(hsi_rgb_float, 0, 255).astype(np.uint8)
 
                 # Convert to Grayscale (Ensure Correct Color Space)
@@ -120,7 +132,7 @@ class Fusion:
                                                   endmembers= self.endmember_n,
                                                   loops= self.loops,
                                                   tol= self.tol)
-                        while np.abs(np.mean(np.sum(h, axis=0))-1) > 1e-2:
+                        while np.abs(np.mean(np.sum(h, axis=0))-1) > 1e-1:
                                 print(f"average abundance: {np.mean(np.sum(h, axis=0))} reducing delta from {delta}->{delta/2}")
                                 delta = delta/2
                                 upscaled_patch, w, h = CPPA(HSI_data = HSI_patch, 
@@ -198,7 +210,14 @@ class Fusion:
                 start = time.time()
                 final_cube_shape = (self.rgb_img.shape[0], self.rgb_img.shape[1], 108)
                 self.upscaled_datacube = np.memmap("Upscaled_cube.dat", dtype=np.float32, mode='w+', shape=final_cube_shape)
-                spatial_transform = self.gen_spatial(kernel_size=21, sigma=(5,15), rotation=5.0)
+                warped_grayscale = cv2.warpPerspective(self.hsi_grayscale, 
+                                                       self.spatial.hr_transform,
+                                                       (self.rgb_grayscale.shape[1], self.rgb_grayscale.shape[0]))
+                self.blur_kernel = matrix_kernel_estimation_improved(warped_grayscale[200:400, 200:400], self.rgb_grayscale[200:400, 200:400], kernel_size=21)
+                plt.imshow(self.blur_kernel)
+                plt.show()
+                os._exit(0)
+                spatial_transform = self.gen_spatial(kernel_size=101, sigma=(0.01,10), rotation=5.0)
                 done = False
                 y = 1300
                 while not done:
@@ -238,16 +257,26 @@ class Fusion:
                 cv2.imwrite("output/recent_band_70.png", (self.upscaled_datacube[:,:,67]*255).astype(np.uint8))
                 cv2.imwrite("output/recent_rgb_base.png", cv2.cvtColor(self.rgb_img, cv2.COLOR_RGB2BGR))
                 cv2.imwrite("output/recent_hsi_gray.png", self.hsi_grayscale)
+                rgb_img = self.rgb_img[600:700,1300:1400,:]
+                input_flattened = self.input_datacube[600:700,1300:1400, :].reshape(-1,hsi_patch.shape[2])
+                input_RGB = np.reshape(input_flattened@self.spectral_response_matrix.T, shape=(100, 100, -1))
+                output_flattened = self.upscaled_datacube[600:700,1300:1400, :].reshape(-1,hsi_patch.shape[2])
+                output_RGB = np.reshape(output_flattened@self.spectral_response_matrix.T, shape=(100, 100, -1))
+                plot_final(rgb_img, 
+                           input_RGB, 
+                           output_RGB,
+                           spatial_transform)
+                
         
 
 
-        def gen_spatial(self, kernel_size=3, sigma=(1,1), rotation=0) -> np.ndarray: #Chat GPT
-                gaussian_x = cv2.getGaussianKernel(kernel_size, sigma=sigma[0])
+        def gen_spatial(self, kernel_size=41, sigma=(1,1), rotation=0) -> np.ndarray: #Chat GPT
+                """gaussian_x = cv2.getGaussianKernel(kernel_size, sigma=sigma[0])
                 gaussian_y = cv2.getGaussianKernel(kernel_size, sigma=sigma[1])
                 gaussian_2d = np.outer(gaussian_x, gaussian_y)
                 if rotation != 0:
                         rMat = cv2.getRotationMatrix2D((kernel_size//2, kernel_size//2), rotation, 1.0)
-                        gaussian_2d = cv2.warpAffine(gaussian_2d, rMat, dsize=(kernel_size, kernel_size))
+                        gaussian_2d = cv2.warpAffine(gaussian_2d, rMat, dsize=(kernel_size, kernel_size))"""
                 
                 patch_size = self.patch_size
                 patch_spatial = np.zeros((patch_size * patch_size, patch_size * patch_size), dtype=np.float32)
@@ -275,12 +304,25 @@ class Fusion:
                 hsi_indices = (x_hsi + y_hsi * patch_size)[valid_mask]
 
                 # Assign Gaussian values efficiently
-                patch_spatial[k_indices, hsi_indices] = np.tile(gaussian_2d.ravel(), patch_size * patch_size)[valid_mask]
+                patch_spatial[k_indices, hsi_indices] = np.tile(self.blur_kernel.ravel(), patch_size * patch_size)[valid_mask]
                 assert patch_spatial.shape[0] == self.patch_size*self.patch_size and patch_spatial.shape[1] == self.patch_size*self.patch_size, "Spatial transform generation failed"
                 return patch_spatial
         
-        def gen_blur_kernel(HSI_bw, RGB_bw, kernel_size = 21) -> np.ndarray:
-                ...
+        def get_blur_kernel(self, lmbda=50, beta=0.00001, kernel_size=75):
+                rgb = cv2.imread('output/rgb.png')[::4,::4, 0]
+                blurKernel = np.zeros(shape=(31,31))
+                blurKernel[13:17,:] = np.ones_like(blurKernel[13:17,:])
+                blurKernel[:,13:17] = np.ones_like(blurKernel[:,13:17])
+                blurKernel /= np.sum(blurKernel)
+                blurred = cv2.filter2D(rgb, ddepth=-1, kernel=blurKernel)
+                
+                
+                plt.imshow(blurred)
+                plt.show()
+
+                os._exit(0)
+                
+                
 
                                 
                                 

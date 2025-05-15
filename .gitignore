@@ -17,3 +17,5 @@ todo.md
 *.dat
 Test*
 *.npz
+Thesis.md
+*.npy

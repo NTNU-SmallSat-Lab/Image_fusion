@@ -188,3 +188,23 @@ def Normalize(data, min=0.0, max=1.0):
     data = (data-data_min)*(max-min)/(data_max-data_min)+min
     return data
 
+def plot_final(rgb, hsi, fused, spatial_transform):
+    fig = plt.figure(figsize=(10,10))
+    gs = fig.add_gridspec(2,2)
+    ax0 = fig.add_subplot(gs[0,0])
+    ax0.imshow(rgb)
+    ax0.set_title('RGB image')
+    ax1 = fig.add_subplot(gs[0,1])
+    rgb_flattened = rgb.reshape(-1, 3)
+    rgb_downsampled = np.reshape((rgb_flattened.T@spatial_transform).T, shape=(100, 100, -1))
+    ax1.imshow(rgb_downsampled.astype(np.uint8))
+    ax1.set_title('Degraded RGB')
+    ax2 = fig.add_subplot(gs[1,0])
+    ax2.imshow(fused.astype(np.uint8))
+    ax2.set_title('Fusion Result')
+    ax3 = fig.add_subplot(gs[1,1])
+    ax3.imshow(hsi.astype(np.uint8))
+    ax3.set_title('HSI data')
+    plt.tight_layout(pad=0.1)
+    plt.savefig(f"output", bbox_inches='tight', dpi=300)
+    plt.close(fig)

@@ -85,14 +85,13 @@ class simple_PPA:
         obj = self.obj(data)
         old_obj = 2*obj
         dobj = (old_obj-obj)/(old_obj+obj)
-        print(obj)
         while np.abs(dobj) > tol:
+            print(f"obj: {obj}\nold: {old_obj}\ndiff: {dobj}")
             self.all_endmembers_update(data)
             self.abundances_update(data)
             old_obj = obj
             obj = self.obj(data)
             dobj = (old_obj-obj)/(old_obj+obj)
-            print(obj)
 
 def get_PPA(data, EM, delta=0.15):
     flat = data.reshape(data.shape[0]*data.shape[1],data.shape[2]).T
@@ -102,20 +101,20 @@ def get_PPA(data, EM, delta=0.15):
     return sppa.w, sppa.h
 
 if __name__ == "__main__":
-    cube = np.memmap("Input_datacube.dat", dtype=np.float32, mode='r', shape=(400, 874, 108))
+    cube = np.memmap("Input_datacube.dat", dtype=np.float32, mode='r', shape=(800, 1748, 108))
     EM = 3 #Number of endmember spectra
 
-    x_start, x_end, y_start, y_end = 0, 400, 0, 874 #Coordinates that image is cropped to
+    x_start, x_end, y_start, y_end = 0, 800, 0, 1000 #Coordinates that image is cropped to
     pix_coords = [x_start,x_end,y_start,y_end]
-    size = (x_end-x_start, y_end-y_start)
-    arr = cube[x_start:x_end,y_start:y_end,:]
-    arr = util.remove_darkest(arr) #Removes 90% of the darkest pixel in each band from entire image (in that band)
+    size = (400, 500)
+    arr = cube[x_start:x_end:2,y_start:y_end:2,:]
+    #arr = util.remove_darkest(arr) #Removes 90% of the darkest pixel in each band from entire image (in that band)
     #arr = plot.Normalize(arr)
     flat = arr.reshape(arr.shape[0]*arr.shape[1],arr.shape[2]).T
 
-    sppa = simple_PPA(flat, EM, delta=0.05)
+    sppa = simple_PPA(flat, EM, delta=0.05, endmembers=flat)
 
-    sppa.train(flat)
+    sppa.train(flat, tol=1e-2)
 
     save_path = f"{x_start}-{x_end}x_{y_start}-{y_end}y"
     if not os.path.exists(save_path):
